@@ -227,7 +227,7 @@ When the first `broken` finding appears: a vertical marker on the chart at `star
 | Throughput | Attempts the backend completes per second (including Wasted Work) |
 | Goodput | Requests that Succeeded, per second |
 | Wasted work | Backend time spent on Attempts that had already timed out; their responses are discarded |
-| Attempt latency | Completion time minus the time the Attempt reached the limiter, including delay and queue wait |
+| Attempt latency | Completion time minus the time the Attempt reached the limiter, including delay and queue wait. Only Attempts that got a response before timing out; timed-out Attempts show up in timeouts and Goodput instead |
 | End-to-end latency | Time from a Request's first Attempt to its success, across all retries (Succeeded Requests only) |
 | p50 / p95 / p99 | Percentiles over Attempt latency (and, separately, end-to-end latency) in a rolling window |
 | Baseline p99 | Theoretical p99 of the service-time distribution (from mean and cv) |
