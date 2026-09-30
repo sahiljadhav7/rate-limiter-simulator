@@ -24,3 +24,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local tickets and specs (see docs/agents/issue-tracker.md)
+.scratch/

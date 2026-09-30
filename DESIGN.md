@@ -12,6 +12,16 @@ Token values below were read from Breakscale's published stylesheet (September 2
 4. **Explain on the paper.** Scenario explanations are handwritten notes placed next to what they describe, as a teacher would scribble in a margin.
 5. **Calm motion.** Transitions are 120 to 200 ms and only fade or slide a few pixels. The simulation is what moves; the interface does not.
 
+## Design constraints
+
+- No emoji, glassmorphism, gradient text, or glowing shadows
+- Colour carries meaning: component colours identify a kind, status colours mean trouble
+- Numbers in the mono stack with tabular figures
+- Interactive transitions only, 120-200ms, and `prefers-reduced-motion` disables them
+- All colour from tokens in `src/ui/tokens.css`. No hardcoded hex elsewhere.
+- WCAG AA on text. Compute the ratio, do not eyeball it.
+
+
 ## Tokens
 
 Put these in `src/ui/tokens.css`. Light is the default; dark applies under the system preference unless the user picked light, and under an explicit `data-theme="dark"`.

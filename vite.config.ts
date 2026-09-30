@@ -7,6 +7,5 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
-    passWithNoTests: true, // remove once RS-2 adds the first tests
   },
 })
