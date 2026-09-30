@@ -56,11 +56,20 @@ export interface Totals {
     readonly delayed: number
     /** Reached the Limiter, decision not made yet. */
     readonly awaitingDecision: number
-    /** Allowed, then dropped because the Backend queue was full. */
+    /**
+     * Delayed, and held until their release time. One whose caller has timed out stays
+     * counted here until then, as it still holds its place with the Limiter.
+     */
+    readonly awaitingRelease: number
+    /** Delayed, then sent to the Backend at their release time. */
+    readonly released: number
+    /** Delayed, then timed out before their release time, so never sent to the Backend. */
+    readonly droppedAtRelease: number
+    /** Allowed or released, then dropped because the Backend queue was full. */
     readonly shed: number
     /** Got a Backend response, discarded ones included. */
     readonly served: number
-    /** Allowed and still queued or in service, counted by the Backend. */
+    /** Allowed or released, and still queued or in service, counted by the Backend. */
     readonly inBackend: number
     /** Timed out before their response. */
     readonly timedOut: number
@@ -101,8 +110,11 @@ interface AttemptState {
   readonly attemptNo: number
   /** When it reached the Limiter, in ms. */
   readonly reachedAtMs: number
-  /** Waiting for its Limiter Decision, with the Backend (queued or in service), or finished. */
-  stage: 'deciding' | 'backend' | 'done'
+  /**
+   * Waiting for its Limiter Decision, Delayed and held until its release, with the Backend
+   * (queued or in service), or finished.
+   */
+  stage: 'deciding' | 'delayed' | 'backend' | 'done'
   /**
    * Its caller timed out. It still runs its course, but nothing it does later retries or
    * ends its Request (.scratch/engine/spec.md, decision 9).
@@ -116,6 +128,7 @@ type EngineEvent =
   | { readonly kind: 'retry'; readonly request: RequestState; readonly attemptNo: number }
   | { readonly kind: 'timeout'; readonly attempt: AttemptState }
   | { readonly kind: 'decision'; readonly attempt: AttemptState }
+  | { readonly kind: 'release'; readonly attempt: AttemptState }
 
 /** Creates an engine at time 0. Throws a RangeError if an option is invalid. */
 export function createEngine(options: EngineOptions): Engine {
@@ -143,8 +156,18 @@ export function createEngine(options: EngineOptions): Engine {
   let nextArrival = 0
 
   const requests = { created: 0, succeeded: 0, rejected: 0, timedOut: 0, shed: 0 }
-  const attempts = { offered: 0, allowed: 0, rejected: 0, delayed: 0, shed: 0, served: 0 }
+  const attempts = {
+    offered: 0,
+    allowed: 0,
+    rejected: 0,
+    delayed: 0,
+    released: 0,
+    droppedAtRelease: 0,
+    shed: 0,
+    served: 0,
+  }
   let awaitingDecision = 0
+  let awaitingRelease = 0
   let timedOutAttempts = 0
 
   function arrive(arrival: Arrival): void {
@@ -185,7 +208,17 @@ export function createEngine(options: EngineOptions): Engine {
   function decide(attempt: AttemptState): void {
     const decision = limiter.decide(attempt.request.clientId, nowMs)
     if (decision.kind === 'delay') {
-      throw new Error('The Limiter answered Delay, which the engine handles from RS-7 on')
+      if (!(decision.releaseAt >= nowMs)) {
+        throw new RangeError(
+          `The Limiter delayed an Attempt at ${nowMs} ms until ${decision.releaseAt} ms, which is earlier`,
+        )
+      }
+      attempts.delayed++
+      metrics.delayed()
+      awaitingRelease++
+      attempt.stage = 'delayed'
+      queue.push(decision.releaseAt, { kind: 'release', attempt })
+      return
     }
     if (decision.kind === 'reject') {
       attempts.rejected++
@@ -196,6 +229,26 @@ export function createEngine(options: EngineOptions): Engine {
     }
     attempts.allowed++
     metrics.allowed(attempt.request.clientId, nowMs)
+    toBackend(attempt)
+  }
+
+  /**
+   * A Delayed Attempt's release time came. It goes to the Backend unless its caller already
+   * timed out: then nobody is waiting for it, and it is dropped without using a slot.
+   */
+  function release(attempt: AttemptState): void {
+    awaitingRelease--
+    if (attempt.abandoned) {
+      attempts.droppedAtRelease++
+      attempt.stage = 'done'
+      return
+    }
+    attempts.released++
+    toBackend(attempt)
+  }
+
+  /** Submits an allowed or released Attempt to the Backend, which starts, queues or sheds it. */
+  function toBackend(attempt: AttemptState): void {
     const result = backend.submit(attempt, nowMs)
     if (result.kind === 'shed') {
       attempts.shed++
@@ -271,6 +324,9 @@ export function createEngine(options: EngineOptions): Engine {
         awaitingDecision--
         decide(event.attempt)
         return
+      case 'release':
+        release(event.attempt)
+        return
     }
   }
 
@@ -331,6 +387,7 @@ export function createEngine(options: EngineOptions): Engine {
         attempts: {
           ...attempts,
           awaitingDecision,
+          awaitingRelease,
           inBackend: backend.busySlots() + backend.queueDepth(),
           timedOut: timedOutAttempts,
         },

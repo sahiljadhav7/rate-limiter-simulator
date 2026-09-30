@@ -80,6 +80,9 @@ describe('createEngine', () => {
         allowed: 100,
         rejected: 0,
         delayed: 0,
+        awaitingRelease: 0,
+        released: 0,
+        droppedAtRelease: 0,
         awaitingDecision: 0,
         shed: 0,
         served: 99,
@@ -184,6 +187,9 @@ describe('createEngine', () => {
           allowed: 3,
           rejected: 0,
           delayed: 0,
+          awaitingRelease: 0,
+          released: 0,
+          droppedAtRelease: 0,
           awaitingDecision: 0,
           shed: 0,
           served: 3,
@@ -297,24 +303,134 @@ describe('createEngine', () => {
         expect(engine.totals().wastedWorkMs).toBe(decision.kind === 'allow' ? 200 : 0)
       },
     )
+  })
 
-    it('throws on a Delay until RS-7 adds releases', () => {
-      const { limiter } = stubLimiter(() => ({ kind: 'delay', releaseAt: 500 }))
+  describe('Delay and release', () => {
+    const oneAt100: ScriptedArrivals[] = [{ atMs: 100, count: 1 }]
+    const delayBy = (ms: number) =>
+      stubLimiter((_, nowMs) => ({ kind: 'delay', releaseAt: nowMs + ms })).limiter
+
+    it('holds a Delayed Attempt and sends it to the Backend at releaseAt', () => {
+      const setup: Setup = { traffic: scriptedOnly, scripted: oneAt100, limiter: delayBy(300) }
+      const waiting = run(setup, [399])
+      expect(waiting.totals().attempts).toMatchObject({
+        offered: 1,
+        allowed: 0,
+        delayed: 1,
+        awaitingRelease: 1,
+        released: 0,
+        inBackend: 0,
+      })
+      // Released at 400 and served 400 to 420. Its latency counts from 100, when it reached
+      // the Limiter, so the wait is in it (ADR 0001).
+      const done = run(setup, [399, 2000])
+      expect(done.totals().attempts).toMatchObject({
+        delayed: 1,
+        awaitingRelease: 0,
+        released: 1,
+        droppedAtRelease: 0,
+        served: 1,
+      })
+      expect(done.totals().requests).toMatchObject({ succeeded: 1, inFlight: 0 })
+      expect(done.snapshots()[0]).toMatchObject({ delayed: 1, allowed: 0, goodput: 1, p50: 320 })
+      expect(done.allowedSubBuckets().counts.every((x) => x === 0)).toBe(true)
+    })
+
+    it('drops a Delayed Attempt that timed out before its release, so it never uses the Backend', () => {
+      const engine = run(
+        {
+          traffic: scriptedOnly,
+          scripted: oneAt100,
+          limiter: delayBy(300),
+          retry: { timeoutMs: 200, retry: 'none', maxAttempts: 1 },
+        },
+        [2000],
+      )
+      expect(engine.totals()).toMatchObject({
+        requests: { created: 1, succeeded: 0, timedOut: 1, inFlight: 0 },
+        attempts: {
+          delayed: 1,
+          timedOut: 1,
+          awaitingRelease: 0,
+          released: 0,
+          droppedAtRelease: 1,
+          served: 0,
+          inBackend: 0,
+        },
+        wastedWorkMs: 0,
+      })
+      expect(engine.snapshots()[0]?.backendUtil).toBe(0)
+    })
+
+    it('drops an Attempt whose release comes at the same moment as its timeout', () => {
+      // Reached the Limiter at 100, timeout 200: both the timeout and the release are at 300.
+      // The caller has stopped waiting at 300, so nothing is sent to the Backend.
+      const engine = run(
+        {
+          traffic: scriptedOnly,
+          scripted: oneAt100,
+          limiter: delayBy(200),
+          retry: { timeoutMs: 200, retry: 'none', maxAttempts: 1 },
+        },
+        [2000],
+      )
+      expect(engine.totals().attempts).toMatchObject({ droppedAtRelease: 1, released: 0 })
+      expect(engine.totals().requests).toMatchObject({ timedOut: 1, succeeded: 0 })
+    })
+
+    it('counts the decision latency and the hold in the Attempt latency', () => {
+      // Reaches the Limiter at 100, decided at 130, held until 330, served 330 to 350.
+      const engine = run(
+        { traffic: scriptedOnly, scripted: oneAt100, limiter: delayBy(200), decisionDelayMs: 30 },
+        [2000],
+      )
+      expect(engine.snapshots()[0]).toMatchObject({ goodput: 1, p50: 250 })
+    })
+
+    it('sheds a released Attempt when the Backend is full, and retries it', () => {
+      // Two Attempts released together at 400 to one slot with no queue: the second is shed,
+      // retries at once, is Delayed again and released at 700, when the slot is free.
+      const engine = run(
+        {
+          traffic: scriptedOnly,
+          scripted: [{ atMs: 100, count: 2 }],
+          limiter: delayBy(300),
+          retry: { timeoutMs: 1000, retry: 'immediate', maxAttempts: 2 },
+          backend: { slots: 1, queueLimit: 0, meanMs: 100, cv: 0 },
+        },
+        [2000],
+      )
+      expect(engine.totals().attempts).toMatchObject({
+        offered: 3,
+        delayed: 3,
+        released: 3,
+        shed: 1,
+        served: 2,
+      })
+      expect(engine.totals().requests).toMatchObject({ succeeded: 2, shed: 0 })
+    })
+
+    it('throws a RangeError if the Limiter releases an Attempt before it was decided', () => {
+      const { limiter } = stubLimiter((_, nowMs) => ({ kind: 'delay', releaseAt: nowMs - 1 }))
       expect(() => run({ traffic: scriptedOnly, scripted: oneAt100, limiter }, [1000])).toThrow(
-        /Delay/,
+        RangeError,
       )
     })
   })
 
   describe('a mixed, overloaded run', () => {
-    // Poisson at 300 rps from three Clients, a Limiter that rejects in a fixed time pattern,
-    // immediate retries and a Backend that serves about 267 rps: every path gets used.
+    // Poisson at 300 rps from three Clients, a Limiter that rejects, delays (by 0 to 199 ms,
+    // so some Attempts time out while held) or allows in a fixed time pattern, immediate
+    // retries and a Backend that serves about 267 rps: every path gets used.
     const mixed = (): Setup => ({
       traffic: { shape: 'poisson', demandRps: 300, clients: ['a', 'b', 'c'] },
       scripted: [{ atMs: 2000, count: 200, clientId: 'b' }],
-      limiter: stubLimiter((_, nowMs) =>
-        Math.floor(nowMs / 7) % 3 === 0 ? { kind: 'reject' } : { kind: 'allow' },
-      ).limiter,
+      limiter: stubLimiter((_, nowMs): LimiterDecision => {
+        const phase = Math.floor(nowMs / 7) % 4
+        if (phase === 0) return { kind: 'reject' }
+        if (phase === 1) return { kind: 'delay', releaseAt: nowMs + (Math.floor(nowMs) % 200) }
+        return { kind: 'allow' }
+      }).limiter,
       retry: { timeoutMs: 150, retry: 'immediate', maxAttempts: 3 },
       backend: { slots: 4, queueLimit: 20, meanMs: 15, cv: 1 },
       decisionDelayMs: 2,
@@ -355,7 +471,12 @@ describe('createEngine', () => {
         expect(attempts.offered).toBe(
           attempts.allowed + attempts.rejected + attempts.delayed + attempts.awaitingDecision,
         )
-        expect(attempts.allowed).toBe(attempts.shed + attempts.served + attempts.inBackend)
+        expect(attempts.delayed).toBe(
+          attempts.released + attempts.droppedAtRelease + attempts.awaitingRelease,
+        )
+        expect(attempts.allowed + attempts.released).toBe(
+          attempts.shed + attempts.served + attempts.inBackend,
+        )
         expect(requests.created).toBe(
           requests.succeeded +
             requests.rejected +
@@ -370,6 +491,7 @@ describe('createEngine', () => {
         Math.min(requests.succeeded, requests.rejected, requests.timedOut, requests.shed),
       ).toBeGreaterThan(0)
       expect(attempts.offered).toBeGreaterThan(requests.created)
+      expect(Math.min(attempts.released, attempts.droppedAtRelease)).toBeGreaterThan(0)
       expect(wastedWorkMs).toBeGreaterThan(0)
     })
 
@@ -420,6 +542,7 @@ describe('createEngine', () => {
         offeredLoad: sum((x) => x.offeredLoad),
         allowed: sum((x) => x.allowed),
         rejected: sum((x) => x.rejected),
+        delayed: sum((x) => x.delayed),
         shed: sum((x) => x.shed),
         goodput: sum((x) => x.goodput),
         failedRejected: sum((x) => x.failed.rejected),
@@ -430,6 +553,7 @@ describe('createEngine', () => {
         offeredLoad: attempts.offered,
         allowed: attempts.allowed,
         rejected: attempts.rejected,
+        delayed: attempts.delayed,
         shed: attempts.shed,
         goodput: requests.succeeded,
         failedRejected: requests.rejected,

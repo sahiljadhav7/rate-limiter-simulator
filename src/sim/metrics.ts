@@ -157,6 +157,9 @@ export function createMetricsCollector(subBucketMs: number) {
     rejected(): void {
       counts.rejected++
     },
+    delayed(): void {
+      counts.delayed++
+    },
     shed(): void {
       counts.shed++
     },
