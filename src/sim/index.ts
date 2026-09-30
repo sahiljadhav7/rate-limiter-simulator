@@ -16,3 +16,29 @@ export {
   type RandomStreams,
   type StreamName,
 } from './rng.ts'
+export {
+  checkTrafficSpec,
+  clientWeights,
+  gapWork,
+  pickClient,
+  rateProfile,
+  timeToWork,
+  unitExponential,
+  workBetween,
+  type BurstyPhases,
+  type ClientId,
+  type RateProfile,
+  type TrafficShape,
+  type TrafficSpec,
+} from './traffic.ts'
+export {
+  createTrafficSource,
+  type Arrival,
+  type ControlChange,
+  type ControlEvent,
+  type RequestId,
+  type ScriptedArrivals,
+  type TrafficReader,
+  type TrafficSource,
+  type TrafficSourceOptions,
+} from './traffic-source.ts'
