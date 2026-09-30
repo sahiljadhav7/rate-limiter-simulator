@@ -5,6 +5,8 @@
  *
  * The runner advances the shared traffic source first, then each engine to the same time.
  */
+import { checkNonNegative, checkPositive } from './checks.ts'
+import { createSimClock } from './clock.ts'
 import { createBackend, type Backend, type BackendSpec } from './backend.ts'
 import { createEventQueue } from './event-queue.ts'
 import type { Limiter } from './limiter.ts'
@@ -135,40 +137,30 @@ export function createEngine(options: EngineOptions): Engine {
   const { traffic, limiter, retry } = options
   checkRetryPolicy(retry)
   const decisionDelayMs = options.decisionDelayMs ?? 0
-  if (!Number.isFinite(decisionDelayMs) || decisionDelayMs < 0) {
-    throw new RangeError(
-      `The decision latency must be a finite number of ms, 0 or more, got ${decisionDelayMs}`,
-    )
-  }
+  checkNonNegative(decisionDelayMs, 'The decision latency in ms')
   const subBucketMs = options.subBucketMs ?? 100
-  if (!Number.isFinite(subBucketMs) || subBucketMs <= 0) {
-    throw new RangeError(
-      `The sub-bucket width must be a finite number of ms, more than 0, got ${subBucketMs}`,
-    )
-  }
+  checkPositive(subBucketMs, 'The sub-bucket width in ms')
   const metrics = createMetricsCollector(subBucketMs)
   const backend: Backend<AttemptState> = createBackend(options.backend, options.streams.service)
   const queue = createEventQueue<EngineEvent>()
   const openRequests = new Set<RequestState>()
-  let nowMs = 0
+  const clock = createSimClock()
   let nextSampleMs = SNAPSHOT_MS
   let arrivals: Arrival[] = []
   let nextArrival = 0
 
-  const requests = { created: 0, succeeded: 0, rejected: 0, timedOut: 0, shed: 0 }
+  /**
+   * Attempt counts only the engine sees. Everything the Snapshots also count (Requests,
+   * Offered Load, Decisions, sheds) is counted once, by the metrics collector.
+   */
   const attempts = {
-    offered: 0,
-    allowed: 0,
-    rejected: 0,
-    delayed: 0,
+    awaitingDecision: 0,
+    awaitingRelease: 0,
     released: 0,
     droppedAtRelease: 0,
-    shed: 0,
     served: 0,
+    timedOut: 0,
   }
-  let awaitingDecision = 0
-  let awaitingRelease = 0
-  let timedOutAttempts = 0
 
   function arrive(arrival: Arrival): void {
     const request: RequestState = {
@@ -176,7 +168,6 @@ export function createEngine(options: EngineOptions): Engine {
       clientId: arrival.clientId,
       arrivedAtMs: arrival.atMs,
     }
-    requests.created++
     metrics.newRequest()
     openRequests.add(request)
     startAttempt(request, 1)
@@ -186,18 +177,17 @@ export function createEngine(options: EngineOptions): Engine {
     const attempt: AttemptState = {
       request,
       attemptNo,
-      reachedAtMs: nowMs,
+      reachedAtMs: clock.now(),
       stage: 'deciding',
       abandoned: false,
     }
-    attempts.offered++
     metrics.offered(request.clientId)
-    queue.push(nowMs + retry.timeoutMs, { kind: 'timeout', attempt })
+    queue.push(clock.now() + retry.timeoutMs, { kind: 'timeout', attempt })
     if (decisionDelayMs === 0) {
       decide(attempt)
     } else {
-      awaitingDecision++
-      queue.push(nowMs + decisionDelayMs, { kind: 'decision', attempt })
+      attempts.awaitingDecision++
+      queue.push(clock.now() + decisionDelayMs, { kind: 'decision', attempt })
     }
   }
 
@@ -206,29 +196,26 @@ export function createEngine(options: EngineOptions): Engine {
    * timed out is still decided and counted: the Limiter cannot know the caller left.
    */
   function decide(attempt: AttemptState): void {
-    const decision = limiter.decide(attempt.request.clientId, nowMs)
+    const decision = limiter.decide(attempt.request.clientId, clock.now())
     if (decision.kind === 'delay') {
-      if (!(decision.releaseAt >= nowMs)) {
+      if (!(decision.releaseAtMs >= clock.now())) {
         throw new RangeError(
-          `The Limiter delayed an Attempt at ${nowMs} ms until ${decision.releaseAt} ms, which is earlier`,
+          `The Limiter delayed an Attempt at ${clock.now()} ms until ${decision.releaseAtMs} ms, which is earlier`,
         )
       }
-      attempts.delayed++
       metrics.delayed()
-      awaitingRelease++
+      attempts.awaitingRelease++
       attempt.stage = 'delayed'
-      queue.push(decision.releaseAt, { kind: 'release', attempt })
+      queue.push(decision.releaseAtMs, { kind: 'release', attempt })
       return
     }
     if (decision.kind === 'reject') {
-      attempts.rejected++
       metrics.rejected()
       attempt.stage = 'done'
       if (!attempt.abandoned) retryOrEnd(attempt, 'rejected')
       return
     }
-    attempts.allowed++
-    metrics.allowed(attempt.request.clientId, nowMs)
+    metrics.allowed(attempt.request.clientId, clock.now())
     toBackend(attempt)
   }
 
@@ -237,7 +224,7 @@ export function createEngine(options: EngineOptions): Engine {
    * timed out: then nobody is waiting for it, and it is dropped without using a slot.
    */
   function release(attempt: AttemptState): void {
-    awaitingRelease--
+    attempts.awaitingRelease--
     if (attempt.abandoned) {
       attempts.droppedAtRelease++
       attempt.stage = 'done'
@@ -249,9 +236,8 @@ export function createEngine(options: EngineOptions): Engine {
 
   /** Submits an allowed or released Attempt to the Backend, which starts, queues or sheds it. */
   function toBackend(attempt: AttemptState): void {
-    const result = backend.submit(attempt, nowMs)
+    const result = backend.submit(attempt, clock.now())
     if (result.kind === 'shed') {
-      attempts.shed++
       metrics.shed()
       attempt.stage = 'done'
       if (!attempt.abandoned) retryOrEnd(attempt, 'shed')
@@ -259,7 +245,7 @@ export function createEngine(options: EngineOptions): Engine {
     }
     attempt.stage = 'backend'
     if (result.kind === 'started') queue.push(result.endsAtMs, { kind: 'serviceEnd', attempt })
-    if (attempt.abandoned) backend.abandon(attempt, nowMs)
+    if (attempt.abandoned) backend.abandon(attempt, clock.now())
   }
 
   /**
@@ -268,9 +254,9 @@ export function createEngine(options: EngineOptions): Engine {
    */
   function timeout(attempt: AttemptState): void {
     if (attempt.stage === 'done') return
-    timedOutAttempts++
+    attempts.timedOut++
     attempt.abandoned = true
-    if (attempt.stage === 'backend') backend.abandon(attempt, nowMs)
+    if (attempt.stage === 'backend') backend.abandon(attempt, clock.now())
     retryOrEnd(attempt, 'timedOut')
   }
 
@@ -282,12 +268,11 @@ export function createEngine(options: EngineOptions): Engine {
   function retryOrEnd(attempt: AttemptState, failure: Failure): void {
     const delayMs = retryDelayMs(retry, attempt.attemptNo)
     if (delayMs === null) {
-      requests[failure]++
       metrics.failed(failure)
       openRequests.delete(attempt.request)
       return
     }
-    queue.push(nowMs + delayMs, {
+    queue.push(clock.now() + delayMs, {
       kind: 'retry',
       request: attempt.request,
       attemptNo: attempt.attemptNo + 1,
@@ -301,10 +286,10 @@ export function createEngine(options: EngineOptions): Engine {
   function serviceEnd(attempt: AttemptState): void {
     attempts.served++
     attempt.stage = 'done'
-    const next = backend.finish(attempt, nowMs)
+    const next = backend.finish(attempt, clock.now())
     if (next !== null) queue.push(next.endsAtMs, { kind: 'serviceEnd', attempt: next.job })
     if (attempt.abandoned) return
-    requests.succeeded++
+    const nowMs = clock.now()
     metrics.succeeded(nowMs, nowMs - attempt.reachedAtMs, nowMs - attempt.request.arrivedAtMs)
     openRequests.delete(attempt.request)
   }
@@ -321,7 +306,7 @@ export function createEngine(options: EngineOptions): Engine {
         timeout(event.attempt)
         return
       case 'decision':
-        awaitingDecision--
+        attempts.awaitingDecision--
         decide(event.attempt)
         return
       case 'release':
@@ -349,8 +334,10 @@ export function createEngine(options: EngineOptions): Engine {
 
   return {
     advanceTo(untilMs) {
-      if (!Number.isFinite(untilMs) || untilMs < nowMs) {
-        throw new RangeError(`The engine can only advance forward from ${nowMs} ms, got ${untilMs}`)
+      if (!Number.isFinite(untilMs) || untilMs < clock.now()) {
+        throw new RangeError(
+          `The engine can only advance forward from ${clock.now()} ms, got ${untilMs}`,
+        )
       }
       arrivals = arrivals.slice(nextArrival).concat(traffic.read(untilMs))
       nextArrival = 0
@@ -364,16 +351,16 @@ export function createEngine(options: EngineOptions): Engine {
         sampleUpTo(nextMs)
         if (event !== undefined && eventMs <= arrivalMs) {
           queue.pop()
-          nowMs = eventMs
+          clock.advanceTo(eventMs)
           handle(event.event)
         } else if (arrival !== undefined) {
           nextArrival++
-          nowMs = arrivalMs
+          clock.advanceTo(arrivalMs)
           arrive(arrival)
         }
       }
       sampleUpTo(untilMs)
-      nowMs = untilMs
+      clock.advanceTo(untilMs)
     },
     snapshots() {
       return metrics.snapshots()
@@ -382,16 +369,24 @@ export function createEngine(options: EngineOptions): Engine {
       return { bucketMs: subBucketMs, counts: metrics.allowedSubBuckets() }
     },
     totals() {
+      const counted = metrics.totals()
       return {
-        requests: { ...requests, inFlight: openRequests.size },
-        attempts: {
-          ...attempts,
-          awaitingDecision,
-          awaitingRelease,
-          inBackend: backend.busySlots() + backend.queueDepth(),
-          timedOut: timedOutAttempts,
+        requests: {
+          created: counted.demand,
+          succeeded: counted.goodput,
+          ...counted.failed,
+          inFlight: openRequests.size,
         },
-        wastedWorkMs: backend.measure(nowMs).wastedSlotMs,
+        attempts: {
+          offered: counted.offeredLoad,
+          allowed: counted.allowed,
+          rejected: counted.rejected,
+          delayed: counted.delayed,
+          shed: counted.shed,
+          ...attempts,
+          inBackend: backend.busySlots() + backend.queueDepth(),
+        },
+        wastedWorkMs: backend.measure(clock.now()).wastedSlotMs,
       }
     },
   }

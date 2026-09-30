@@ -3,6 +3,8 @@
  * simulated second into a Snapshot. Every value is measured from events; a value with
  * nothing to measure is null, never a guess (.scratch/engine/spec.md, decisions 3, 5, 8).
  */
+import { bucketAt } from './buckets.ts'
+import { createFifo } from './fifo.ts'
 import type { ClientId } from './traffic.ts'
 
 /** How long each Snapshot covers, in ms. */
@@ -53,7 +55,7 @@ export interface Snapshot {
   readonly e2eP99: number | null
   /** Per Client seen so far: Attempts that reached the Limiter, and those allowed. */
   readonly perClient: Readonly<
-    Record<ClientId, { readonly sent: number; readonly allowed: number }>
+    Record<ClientId, { readonly offeredLoad: number; readonly allowed: number }>
   >
 }
 
@@ -74,30 +76,36 @@ function nearestRank(sorted: readonly number[], p: number): number | null {
 
 /** Latencies recorded over time, from which percentiles over the recent window are read. */
 function createLatencyWindow() {
-  let atMs: number[] = []
-  let values: number[] = []
-  let head = 0
+  const recorded = createFifo<{ readonly atMs: number; readonly latencyMs: number }>()
   return {
-    record(timeMs: number, latencyMs: number): void {
-      atMs.push(timeMs)
-      values.push(latencyMs)
+    record(atMs: number, latencyMs: number): void {
+      recorded.push({ atMs, latencyMs })
     },
     /** p50, p95 and p99 of latencies recorded in [endMs - window, endMs). */
     percentiles(endMs: number): [number | null, number | null, number | null] {
-      while (head < atMs.length && (atMs[head] ?? Infinity) < endMs - PERCENTILE_WINDOW_MS) head++
-      if (head > 4096 && head * 2 > atMs.length) {
-        atMs = atMs.slice(head)
-        values = values.slice(head)
-        head = 0
-      }
-      const sorted = values.slice(head).sort((a, b) => a - b)
+      while ((recorded.peek()?.atMs ?? Infinity) < endMs - PERCENTILE_WINDOW_MS) recorded.shift()
+      const sorted = recorded
+        .toArray()
+        .map((entry) => entry.latencyMs)
+        .sort((a, b) => a - b)
       return [nearestRank(sorted, 0.5), nearestRank(sorted, 0.95), nearestRank(sorted, 0.99)]
     },
   }
 }
 
-/** The counts of one second. */
-function emptyCounts() {
+/** Counts of what the engine handled: over one second, or since the start of the run. */
+export interface Counts {
+  demand: number
+  offeredLoad: number
+  allowed: number
+  rejected: number
+  delayed: number
+  goodput: number
+  failed: { rejected: number; timedOut: number; shed: number }
+  shed: number
+}
+
+function emptyCounts(): Counts {
   return {
     demand: 0,
     offeredLoad: 0,
@@ -121,8 +129,14 @@ export interface BackendReading {
 
 /** Creates a collector. Allowed Attempts are also counted in sub-buckets of `subBucketMs`. */
 export function createMetricsCollector(subBucketMs: number) {
+  /** This second's counts, and the running totals since 0. Every event goes into both. */
   let counts = emptyCounts()
-  const perClient = new Map<ClientId, { sent: number; allowed: number }>()
+  const sinceStart = emptyCounts()
+  function add(update: (into: Counts) => void): void {
+    update(counts)
+    update(sinceStart)
+  }
+  const perClient = new Map<ClientId, { offeredLoad: number; allowed: number }>()
   const attemptLatency = createLatencyWindow()
   const e2eLatency = createLatencyWindow()
   const subBuckets: number[] = []
@@ -130,10 +144,10 @@ export function createMetricsCollector(subBucketMs: number) {
   let busyBefore = 0
   let wastedBefore = 0
 
-  function client(clientId: ClientId): { sent: number; allowed: number } {
+  function client(clientId: ClientId): { offeredLoad: number; allowed: number } {
     let entry = perClient.get(clientId)
     if (entry === undefined) {
-      entry = { sent: 0, allowed: 0 }
+      entry = { offeredLoad: 0, allowed: 0 }
       perClient.set(clientId, entry)
     }
     return entry
@@ -141,36 +155,36 @@ export function createMetricsCollector(subBucketMs: number) {
 
   return {
     newRequest(): void {
-      counts.demand++
+      add((c) => c.demand++)
     },
     offered(clientId: ClientId): void {
-      counts.offeredLoad++
-      client(clientId).sent++
+      add((c) => c.offeredLoad++)
+      client(clientId).offeredLoad++
     },
     allowed(clientId: ClientId, nowMs: number): void {
-      counts.allowed++
+      add((c) => c.allowed++)
       client(clientId).allowed++
-      const index = Math.floor(nowMs / subBucketMs)
+      const index = bucketAt(nowMs, subBucketMs)
       while (subBuckets.length <= index) subBuckets.push(0)
       subBuckets[index] = (subBuckets[index] ?? 0) + 1
     },
     rejected(): void {
-      counts.rejected++
+      add((c) => c.rejected++)
     },
     delayed(): void {
-      counts.delayed++
+      add((c) => c.delayed++)
     },
     shed(): void {
-      counts.shed++
+      add((c) => c.shed++)
     },
     /** A Request Succeeded at `nowMs`; records both latencies. */
     succeeded(nowMs: number, attemptMs: number, endToEndMs: number): void {
-      counts.goodput++
+      add((c) => c.goodput++)
       attemptLatency.record(nowMs, attemptMs)
       e2eLatency.record(nowMs, endToEndMs)
     },
     failed(failure: Failure): void {
-      counts.failed[failure]++
+      add((c) => c.failed[failure]++)
     },
     /**
      * Closes the second ending at `endMs` and starts the next. Call it before handling any
@@ -201,14 +215,18 @@ export function createMetricsCollector(subBucketMs: number) {
         perClient: Object.fromEntries([...perClient].map(([id, entry]) => [id, { ...entry }])),
       })
       // Sub-buckets with no allowed Attempt read 0, not missing, up to the end of the second.
-      while (subBuckets.length < Math.floor(endMs / subBucketMs)) subBuckets.push(0)
+      while (subBuckets.length < bucketAt(endMs, subBucketMs)) subBuckets.push(0)
       busyBefore = backend.busySlotMs
       wastedBefore = backend.wastedSlotMs
       counts = emptyCounts()
       for (const entry of perClient.values()) {
-        entry.sent = 0
+        entry.offeredLoad = 0
         entry.allowed = 0
       }
+    },
+    /** Counts since the start of the run, as a copy. */
+    totals(): Counts {
+      return { ...sinceStart, failed: { ...sinceStart.failed } }
     },
     snapshots(): readonly Snapshot[] {
       return snapshots

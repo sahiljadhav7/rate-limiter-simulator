@@ -1,0 +1,75 @@
+/*
+ * Design tokens from DESIGN.md. Only type, space and motion so far; the colour tokens, light
+ * and dark, come with the first panels (RS-16), where DESIGN.md wants both themes generated
+ * from one source.
+ */
+:root {
+  /* Type */
+  --sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --hand: 'Caveat', 'Segoe Print', 'Bradley Hand', Chalkboard, cursive;
+  --fs-label: 11px;
+  --tr-label: 0.06em;
+  --lh-label: 1.25;
+  --fs-sm: 12px;
+  --tr-sm: 0;
+  --lh-sm: 1.5;
+  --fs-base: 14px;
+  --tr-base: -0.005em;
+  --lh-base: 1.6;
+  --fs-num: 16px;
+  --tr-num: -0.01em;
+  --lh-num: 1.15;
+  --fs-lg: 22px;
+  --tr-lg: -0.018em;
+  --fs-hero: 34px;
+  --tr-hero: -0.025em;
+  --lh-hero: 1;
+  --fw-body: 450;
+  --fw-med: 550;
+  --fw-num: 650;
+
+  /* Space, radius, borders */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-7: 28px;
+  --sp-10: 40px;
+  --r-mark: 2px;
+  --r-sm: 6px;
+  --r-btn: 8px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+  --bw: 1px;
+  --bw-strong: 1.5px;
+  --track-h: 6px;
+  --thumb: 18px;
+
+  /* Motion */
+  --dur-fast: 0.12s;
+  --dur-base: 0.16s;
+  --dur-slow: 0.2s;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 0.84, 0.44, 1);
+}
+
+/* Base styles (DESIGN.md), without colour until the colour tokens exist. */
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-body);
+  line-height: var(--lh-base);
+  letter-spacing: var(--tr-base);
+  -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
+}
+
+.shell {
+  padding: var(--sp-4);
+}

@@ -308,9 +308,9 @@ describe('createEngine', () => {
   describe('Delay and release', () => {
     const oneAt100: ScriptedArrivals[] = [{ atMs: 100, count: 1 }]
     const delayBy = (ms: number) =>
-      stubLimiter((_, nowMs) => ({ kind: 'delay', releaseAt: nowMs + ms })).limiter
+      stubLimiter((_, nowMs) => ({ kind: 'delay', releaseAtMs: nowMs + ms })).limiter
 
-    it('holds a Delayed Attempt and sends it to the Backend at releaseAt', () => {
+    it('holds a Delayed Attempt and sends it to the Backend at releaseAtMs', () => {
       const setup: Setup = { traffic: scriptedOnly, scripted: oneAt100, limiter: delayBy(300) }
       const waiting = run(setup, [399])
       expect(waiting.totals().attempts).toMatchObject({
@@ -364,7 +364,7 @@ describe('createEngine', () => {
 
     it('drops an Attempt whose release comes at the same moment as its timeout', () => {
       // Reached the Limiter at 100, timeout 200: both the timeout and the release are at 300.
-      // The caller has stopped waiting at 300, so nothing is sent to the Backend.
+      // The caller has stopped waiting at 300, so nothing is offeredLoad to the Backend.
       const engine = run(
         {
           traffic: scriptedOnly,
@@ -411,7 +411,7 @@ describe('createEngine', () => {
     })
 
     it('throws a RangeError if the Limiter releases an Attempt before it was decided', () => {
-      const { limiter } = stubLimiter((_, nowMs) => ({ kind: 'delay', releaseAt: nowMs - 1 }))
+      const { limiter } = stubLimiter((_, nowMs) => ({ kind: 'delay', releaseAtMs: nowMs - 1 }))
       expect(() => run({ traffic: scriptedOnly, scripted: oneAt100, limiter }, [1000])).toThrow(
         RangeError,
       )
@@ -428,7 +428,7 @@ describe('createEngine', () => {
       limiter: stubLimiter((_, nowMs): LimiterDecision => {
         const phase = Math.floor(nowMs / 7) % 4
         if (phase === 0) return { kind: 'reject' }
-        if (phase === 1) return { kind: 'delay', releaseAt: nowMs + (Math.floor(nowMs) % 200) }
+        if (phase === 1) return { kind: 'delay', releaseAtMs: nowMs + (Math.floor(nowMs) % 200) }
         return { kind: 'allow' }
       }).limiter,
       retry: { timeoutMs: 150, retry: 'immediate', maxAttempts: 3 },
@@ -563,7 +563,7 @@ describe('createEngine', () => {
       expect(sum((x) => x.wastedWorkMs)).toBeCloseTo(wastedWorkMs, 6)
       for (const snapshot of snapshots) {
         const perClient = Object.values(snapshot.perClient)
-        expect(perClient.reduce((total, x) => total + x.sent, 0)).toBe(snapshot.offeredLoad)
+        expect(perClient.reduce((total, x) => total + x.offeredLoad, 0)).toBe(snapshot.offeredLoad)
         expect(perClient.reduce((total, x) => total + x.allowed, 0)).toBe(snapshot.allowed)
       }
     })
@@ -579,6 +579,22 @@ describe('createEngine', () => {
         const second = counts.slice(i * 4, i * 4 + 4).reduce((total, x) => total + x, 0)
         expect(second).toBe(snapshot.allowed)
       })
+    })
+
+    it('puts an Attempt allowed on a sub-bucket edge in the sub-bucket that starts there', () => {
+      // 2100 / (100 / 3) rounds to just under 63, so dividing alone would count the Attempt
+      // at 2100 ms in sub-bucket 62, which ends at 2100.
+      const engine = run(
+        {
+          traffic: scriptedOnly,
+          scripted: [{ atMs: 2100, count: 1 }],
+          subBucketMs: 100 / 3,
+        },
+        [3000],
+      )
+      const { counts } = engine.allowedSubBuckets()
+      expect(counts[62]).toBe(0)
+      expect(counts[63]).toBe(1)
     })
 
     it('flags the first five seconds as warm-up', () => {
@@ -660,7 +676,7 @@ describe('createEngine', () => {
           allowed: 9,
           goodput: 9,
           backendUtil: 0.18,
-          perClient: { a: { sent: 9, allowed: 9 } },
+          perClient: { a: { offeredLoad: 9, allowed: 9 } },
         },
         // [1000, 2000): arrivals at 1000 to 1900. 2500 is mid-second, so no third Snapshot.
         {
@@ -671,7 +687,7 @@ describe('createEngine', () => {
           allowed: 10,
           goodput: 10,
           backendUtil: 0.2,
-          perClient: { a: { sent: 10, allowed: 10 } },
+          perClient: { a: { offeredLoad: 10, allowed: 10 } },
         },
       ])
     })

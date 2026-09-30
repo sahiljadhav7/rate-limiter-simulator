@@ -2,17 +2,19 @@
  * The Limiter interface and its algorithms. A Limiter holds per-key state but never reads a
  * clock or a random stream: it decides from the `nowMs` it is given, so runs replay exactly.
  */
+import { checkPositive, checkWholeNumber } from './checks.ts'
+import { bucketAt, bucketStart } from './buckets.ts'
 import type { ClientId } from './traffic.ts'
 
 /**
  * The Limiter's answer for one Attempt: Allow sends it to the Backend, Reject turns it away
- * (optionally saying when to try again), Delay holds it and releases it at `releaseAt`
+ * (optionally saying when to try again), Delay holds it and releases it at `releaseAtMs`
  * (leaky bucket, ADR 0001).
  */
 export type LimiterDecision =
   | { readonly kind: 'allow' }
   | { readonly kind: 'reject'; readonly retryAfterMs?: number }
-  | { readonly kind: 'delay'; readonly releaseAt: number }
+  | { readonly kind: 'delay'; readonly releaseAtMs: number }
 
 /** One Variant's Limiter. */
 export interface Limiter {
@@ -73,30 +75,13 @@ export function createLimiter(spec: LimiterSpec): Limiter {
 
 function createFixedWindow(spec: FixedWindowSpec): Limiter {
   const { keyBy, limit, windowMs } = spec
-  if (!Number.isSafeInteger(limit) || limit < 1) {
-    throw new RangeError(`A fixed window's limit must be a whole number, 1 or more, got ${limit}`)
-  }
-  if (!Number.isFinite(windowMs) || windowMs <= 0) {
-    throw new RangeError(
-      `A fixed window's length must be a finite number of ms, more than 0, got ${windowMs}`,
-    )
-  }
-  /**
-   * The window `nowMs` is in: the k with k x windowMs <= nowMs < (k + 1) x windowMs. Dividing
-   * alone can round across an edge when windowMs is not whole (2100 / (100 / 3) comes out
-   * just under 63), so the result is checked against the edges themselves.
-   */
-  function windowAt(nowMs: number): number {
-    const k = Math.floor(nowMs / windowMs)
-    if ((k + 1) * windowMs <= nowMs) return k + 1
-    if (k * windowMs > nowMs) return k - 1
-    return k
-  }
+  checkWholeNumber(limit, 1, "A fixed window's limit")
+  checkPositive(windowMs, "A fixed window's length in ms")
   /** Per key: the window its count belongs to, and the Attempts allowed in it. */
   const counts = new Map<string, { window: number; allowed: number }>()
   return {
     decide(clientId, nowMs) {
-      const window = windowAt(nowMs)
+      const window = bucketAt(nowMs, windowMs)
       const key = keyFor(keyBy, clientId)
       let entry = counts.get(key)
       if (entry === undefined) {
@@ -107,7 +92,7 @@ function createFixedWindow(spec: FixedWindowSpec): Limiter {
         entry.allowed = 0
       }
       if (entry.allowed >= limit) {
-        return { kind: 'reject', retryAfterMs: (window + 1) * windowMs - nowMs }
+        return { kind: 'reject', retryAfterMs: bucketStart(window + 1, windowMs) - nowMs }
       }
       entry.allowed++
       return { kind: 'allow' }
@@ -120,16 +105,8 @@ function createFixedWindow(spec: FixedWindowSpec): Limiter {
 
 function createTokenBucket(spec: TokenBucketSpec): Limiter {
   const { keyBy, capacity, refillPerSec } = spec
-  if (!Number.isSafeInteger(capacity) || capacity < 1) {
-    throw new RangeError(
-      `A token bucket's capacity must be a whole number, 1 or more, got ${capacity}`,
-    )
-  }
-  if (!Number.isFinite(refillPerSec) || refillPerSec <= 0) {
-    throw new RangeError(
-      `A token bucket's refill rate must be a finite number per second, more than 0, got ${refillPerSec}`,
-    )
-  }
+  checkWholeNumber(capacity, 1, "A token bucket's capacity")
+  checkPositive(refillPerSec, "A token bucket's refill rate in tokens per second")
   /** How long one token takes to come back, in ms. */
   const tokenMs = 1000 / refillPerSec
   /**

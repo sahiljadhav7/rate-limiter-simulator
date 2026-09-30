@@ -116,15 +116,15 @@ A teaching tool, not a production limiter. Nothing real is sent over a network. 
 
 1. **Discrete-event simulation.** A min-heap event queue ordered by simulated time, with a sequence-number tiebreaker so equal timestamps always pop in insertion order. Events: `ARRIVAL`, `DECISION`, `RELEASE`, `SERVICE_END`, `RETRY`, `TIMEOUT`, `SAMPLE`. The engine advances by popping events up to `now + dt`, so the UI can run at any speed.
 2. **Lazy shared traffic source (supports live load control).** One `TrafficSource` generates arrivals just ahead of the simulated clock using the *current* rate, appending to a shared log that every Variant's engine reads. All Variants still see identical traffic, so the comparison stays fair. Poisson inter-arrivals are memoryless, so changing the rate mid-run is statistically correct. Each Variant's engine owns its own retry state, limiter, backend and metrics, because retries depend on responses and diverge per Variant. A Scenario can also supply **scripted arrivals** (bursts at exact times), which are merged into the shared log; this is how Edge Burst traffic is produced.
-3. **Control timeline for determinism.** Every control change is recorded as `{ simTime, change }`. Seed + control timeline replays a run exactly, including slider moves, so a run can be exported or used as a test fixture. Changes apply at the current sim time, never retroactively.
-4. **Limiter is a deterministic, time-injected strategy.** `decide(clientId, now) -> Allow | Reject { retryAfterMs? } | Delay { releaseAt }`. It holds per-key state, but it never reads the clock or RNG itself, only the `now` it is given. That makes it fully replayable and easy to test. `LimiterSpec.keyBy` decides whether state is one global bucket or one per client.
+3. **Control timeline for determinism.** Every control change is recorded as `{ atMs, change }`. Seed + control timeline replays a run exactly, including slider moves, so a run can be exported or used as a test fixture. Changes apply at the current sim time, never retroactively.
+4. **Limiter is a deterministic, time-injected strategy.** `decide(clientId, now) -> Allow | Reject { retryAfterMs? } | Delay { releaseAtMs }`. It holds per-key state, but it never reads the clock or RNG itself, only the `now` it is given. That makes it fully replayable and easy to test. `LimiterSpec.keyBy` decides whether state is one global bucket or one per client.
 5. **Store latency is modeled with a `DECISION` event.** On `ARRIVAL`, the engine schedules `DECISION` at `now + storeLatency` (zero for local stores, handled inline) and calls `decide()` when it fires. `decide()` itself stays synchronous.
 6. **Distributed limiting is a wrapper, not a special case.** N `LimiterNode`s, each with a `CounterStore`. `LocalStore` = per-node counters (effective limit N x L). `SharedStore` = one counter with configurable latency and optional clock skew.
 7. **Backend is a finite-slot server; Attempts time out.** Capacity slots plus a FIFO queue with a limit, gamma-distributed service times (`shape = 1/cv^2`, `scale = mean * cv^2`). Each Attempt times out after `timeoutMs` (a `TIMEOUT` event) and the Retry Policy may retry it. An abandoned Attempt still occupies backend capacity until it finishes (**Wasted Work**) and its late response is discarded, which is what makes goodput collapse possible.
 8. **Metrics are measured.** Counters bucketed per second, latency percentiles from ring buffers of Attempt and end-to-end latencies, and allowed-Attempt counts at sub-window resolution (see Metrics glossary). The first 5 simulated seconds are a **warm-up** and are excluded from diagnosis.
 9. **Diagnosis is computed, not scripted.** Rule-based findings derived from measured metrics, each carrying its evidence (see below).
 10. **Determinism.** Seeded RNG (mulberry32) and the simulated clock only. Separate RNG streams for traffic, service times and retry jitter, so adding a draw in one place does not shift the others. Never `Date.now()` or `Math.random()` inside the engine.
-11. **Leaky bucket is a queue, not a meter.** A meter-style leaky bucket is identical to a token bucket, so it would teach nothing beside one. The Limiter can therefore answer `Delay`; the engine holds the Attempt until a `RELEASE` event at `releaseAt`. The leaky queue is bounded (full means Reject), and the Attempt's timeout keeps running while it waits. See ADR 0001.
+11. **Leaky bucket is a queue, not a meter.** A meter-style leaky bucket is identical to a token bucket, so it would teach nothing beside one. The Limiter can therefore answer `Delay`; the engine holds the Attempt until a `RELEASE` event at `releaseAtMs`. The leaky queue is bounded (full means Reject), and the Attempt's timeout keeps running while it waits. See ADR 0001.
 12. **Retries cover every failed Attempt.** The Retry Policy fires after a Reject, a timeout or a Shed, as real clients retry 429, timeouts and 503. `Retry-After` applies only to Rejects.
 
 ## Load control
@@ -255,7 +255,7 @@ interface Attempt {
 type LimiterDecision =
   | { kind: 'allow' }
   | { kind: 'reject'; retryAfterMs?: number }
-  | { kind: 'delay'; releaseAt: number };   // leaky bucket only (ADR 0001)
+  | { kind: 'delay'; releaseAtMs: number };   // leaky bucket only (ADR 0001)
 
 interface Limiter {
   decide(id: ClientId, now: number): LimiterDecision;
@@ -281,10 +281,10 @@ interface RetryPolicy {
 }
 
 interface ControlEvent {
-  simTime: number;
+  atMs: number;
   change:
-    | { kind: 'demand'; rps: number }
-    | { kind: 'greedyMultiplier'; clientId: ClientId; x: number }
+    | { kind: 'demand'; demandRps: number }
+    | { kind: 'greedyMultiplier'; clientId: ClientId; multiplier: number }
     | { kind: 'burst'; multiplier: number; durationMs: number }
     | { kind: 'shape'; shape: 'constant' | 'poisson' | 'bursty' };
 }
@@ -332,7 +332,7 @@ interface Snapshot {
   e2eP50: number | null;
   e2eP95: number | null;
   e2eP99: number | null;     // end-to-end, Succeeded Requests only
-  perClient: Record<ClientId, { sent: number; allowed: number }>;
+  perClient: Record<ClientId, { offeredLoad: number; allowed: number }>;
 }
 ```
 
@@ -363,7 +363,7 @@ tests/
 
 - **Engine loop:** pop events with `time <= untilMs` in order, set `now = e.time`, handle, then set `now = untilMs`.
 - **ARRIVAL:** a new Request makes its first Attempt. Schedule `DECISION` at `now + storeLatency` (inline when zero) and `TIMEOUT` at `now + timeoutMs`.
-- **DECISION:** ask the limiter. Allow goes to the backend. Reject is recorded and the Retry Policy decides whether to schedule a `RETRY` (honoring `retryAfterMs` when the policy says so). Delay schedules `RELEASE` at `releaseAt`.
+- **DECISION:** ask the limiter. Allow goes to the backend. Reject is recorded and the Retry Policy decides whether to schedule a `RETRY` (honoring `retryAfterMs` when the policy says so). Delay schedules `RELEASE` at `releaseAtMs`.
 - **RELEASE:** a Delayed Attempt goes to the backend, unless it has already timed out.
 - **RETRY:** a new Attempt of the same Request, with `attemptNo + 1` so backoff grows. It gets its own `TIMEOUT`.
 - **TIMEOUT:** if the Attempt has not completed, it is abandoned and the Retry Policy decides whether to retry. Backend work already started still runs to completion as Wasted Work. The Request fails as Timed out only when no retry follows.
@@ -426,7 +426,7 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
   - *AC:* property test that events pop in non-decreasing time and equal times pop in insertion order.
 - **RS-4 Traffic generators [Core]** (1.5h): constant, Poisson, bursty (on/off), greedy client.
   - *AC:* Poisson mean rate is within tolerance over a long fixed-seed run.
-- **RS-4b Lazy shared TrafficSource + control timeline [Core]** (1.5h): generates arrivals just ahead of the sim clock at the current rate, appends to one shared log read by every Variant, records every control change as `{ simTime, change }`. *Depends on RS-2, RS-4.*
+- **RS-4b Lazy shared TrafficSource + control timeline [Core]** (1.5h): generates arrivals just ahead of the sim clock at the current rate, appends to one shared log read by every Variant, records every control change as `{ atMs, change }`. *Depends on RS-2, RS-4.*
   - *AC:* changing the rate mid-run gives the correct new mean rate afterward; all Variants see identical arrivals; seed + control timeline replays identically.
 - **RS-5 Backend model [Core]** (2h): slots, FIFO queue, queue-limit shedding, gamma service time, abandoned work keeps burning capacity. *Depends on RS-2, RS-3.*
   - *AC:* utilization is <= 1 and queue never exceeds the limit.
@@ -436,7 +436,7 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
 
 ## Epic 2: Limiters and client behavior
 - **RS-7 Limiter interface + Fixed Window [Core]** (1.5h): includes `keyBy` scope and the three-way Limiter Decision (Allow, Reject, Delay) with the engine's `RELEASE` handling, so leaky bucket can be added later without changing the interface (D10).
-  - *AC:* boundary and reset tests; an explicit test showing about 2x the limit across a window edge; global and per-client scope both work; a stub limiter that returns Delay releases Attempts at `releaseAt`.
+  - *AC:* boundary and reset tests; an explicit test showing about 2x the limit across a window edge; global and per-client scope both work; a stub limiter that returns Delay releases Attempts at `releaseAtMs`.
 - **RS-8 Token Bucket [Core]** (1h)
   - *AC:* lazy-refill tests, burst up to capacity, `retryAfterMs` correct.
 - **RS-11 Sliding Window Counter [Core]** (1h)

@@ -10,10 +10,13 @@
  * The log only grows: about 3.6 million entries per simulated hour at 1,000 rps. Trimming
  * entries every reader has passed is left to the runner (RS-15).
  */
+import { checkNonNegative, checkPositive, checkWholeNumber } from './checks.ts'
 import type { RandomStream } from './rng.ts'
 import {
+  checkDemand,
+  checkGreedy,
   checkTrafficSpec,
-  clientWeights,
+  clientShares,
   gapWork,
   pickClient,
   rateProfile,
@@ -70,12 +73,13 @@ export interface TrafficSource {
 
 /** One load change: the Demand slider, the greedy multiplier, the burst button or the shape. */
 export type ControlChange =
-  | { readonly kind: 'demand'; readonly rps: number }
+  | { readonly kind: 'demand'; readonly demandRps: number }
   /**
-   * Makes `clientId` the one greedy Client, with `x` shares of Demand; every other Client,
-   * including a previous greedy one, goes back to 1 share. `x` of 1 means no greedy Client.
+   * Makes `clientId` the one greedy Client, with `multiplier` shares of Demand; every other
+   * Client, including a previous greedy one, goes back to 1 share. A multiplier of 1 means no
+   * greedy Client.
    */
-  | { readonly kind: 'greedyMultiplier'; readonly clientId: ClientId; readonly x: number }
+  | { readonly kind: 'greedyMultiplier'; readonly clientId: ClientId; readonly multiplier: number }
   | { readonly kind: 'burst'; readonly multiplier: number; readonly durationMs: number }
   | { readonly kind: 'shape'; readonly shape: TrafficShape }
 
@@ -84,7 +88,7 @@ export type ControlChange =
  * replays a run exactly.
  */
 export interface ControlEvent {
-  readonly simTime: number
+  readonly atMs: number
   readonly change: ControlChange
 }
 
@@ -117,23 +121,16 @@ const SHAPES: readonly TrafficShape[] = ['constant', 'poisson', 'bursty']
 /** Throws a RangeError unless `change` is valid for `spec`. */
 function checkChange(spec: TrafficSpec, change: ControlChange): void {
   const bad = (what: string, value: unknown) => new RangeError(`${what}, got ${String(value)}`)
-  const finite = (value: number) => Number.isFinite(value)
   switch (change.kind) {
     case 'demand':
-      if (!finite(change.rps) || change.rps < 0)
-        throw bad('Demand must be a finite number of rps, 0 or more', change.rps)
+      checkDemand(change.demandRps)
       return
     case 'greedyMultiplier':
-      if (!spec.clients.includes(change.clientId))
-        throw bad('The greedy Client must be one of the Clients', change.clientId)
-      if (!finite(change.x) || change.x <= 0)
-        throw bad('The greedy multiplier must be finite and more than 0', change.x)
+      checkGreedy(spec, change.clientId, change.multiplier)
       return
     case 'burst':
-      if (!finite(change.multiplier) || change.multiplier <= 0)
-        throw bad('The burst multiplier must be finite and more than 0', change.multiplier)
-      if (!finite(change.durationMs) || change.durationMs <= 0)
-        throw bad('The burst must last a finite number of ms, more than 0', change.durationMs)
+      checkPositive(change.multiplier, 'The burst multiplier')
+      checkPositive(change.durationMs, 'How long the burst lasts in ms')
       return
     case 'shape':
       if (!SHAPES.includes(change.shape)) throw bad('Unknown traffic shape', change.shape)
@@ -167,16 +164,8 @@ function expandScripted(
 ): { atMs: number; clientId: ClientId }[] {
   const expanded: { atMs: number; clientId: ClientId }[] = []
   for (const { atMs, count, clientId = clients[0] as ClientId } of scripted) {
-    if (!Number.isFinite(atMs) || atMs < 0) {
-      throw new RangeError(
-        `A scripted arrival time must be a finite number of ms, 0 or more, got ${atMs}`,
-      )
-    }
-    if (!Number.isInteger(count) || count < 1) {
-      throw new RangeError(
-        `A scripted arrival count must be a whole number, 1 or more, got ${count}`,
-      )
-    }
+    checkNonNegative(atMs, 'A scripted arrival time in ms')
+    checkWholeNumber(count, 1, 'A scripted arrival count')
     if (!clients.includes(clientId)) {
       throw new RangeError(`The scripted arrival Client ${clientId} is not one of the Clients`)
     }
@@ -196,19 +185,15 @@ export function createTrafficSource(options: TrafficSourceOptions): TrafficSourc
   const { spec, stream } = options
   checkTrafficSpec(spec)
   let profile: RateProfile = rateProfile(spec)
-  const weights = clientWeights(spec)
+  let shares = clientShares(spec.clients, spec.greedy)
   let shape = spec.shape
   const scripted = expandScripted(options.scriptedArrivals ?? [], spec.clients)
   const controls = options.controls ?? []
-  controls.forEach(({ simTime, change }, i) => {
-    if (!Number.isFinite(simTime) || simTime < 0) {
+  controls.forEach(({ atMs, change }, i) => {
+    checkNonNegative(atMs, 'A control time in ms')
+    if (atMs < (controls[i - 1]?.atMs ?? 0)) {
       throw new RangeError(
-        `A control time must be a finite number of ms, 0 or more, got ${simTime}`,
-      )
-    }
-    if (simTime < (controls[i - 1]?.simTime ?? 0)) {
-      throw new RangeError(
-        `Controls must be in time order, got ${simTime} ms after ${controls[i - 1]?.simTime} ms`,
+        `Controls must be in time order, got ${atMs} ms after ${controls[i - 1]?.atMs} ms`,
       )
     }
     checkChange(spec, change)
@@ -241,7 +226,7 @@ export function createTrafficSource(options: TrafficSourceOptions): TrafficSourc
     const before = profile
     switch (change.kind) {
       case 'demand':
-        profile = { ...profile, demandRps: change.rps }
+        profile = { ...profile, demandRps: change.demandRps }
         break
       case 'burst':
         // A new burst replaces an active one, multiplier and end time both.
@@ -253,8 +238,7 @@ export function createTrafficSource(options: TrafficSourceOptions): TrafficSourc
       case 'greedyMultiplier':
         // Only who sends changes: the next pick uses the new weights. One greedy Client at a
         // time, so every other Client goes back to 1 share.
-        weights.fill(1)
-        weights[spec.clients.indexOf(change.clientId)] = change.x
+        shares = clientShares(spec.clients, change)
         break
       case 'shape':
         if (change.shape !== shape) {
@@ -269,7 +253,7 @@ export function createTrafficSource(options: TrafficSourceOptions): TrafficSourc
       const left = Math.max(0, pending.work - workBetween(before, pending.fromMs, atMs))
       pending = timed(atMs, left)
     }
-    applied.push({ simTime: atMs, change })
+    applied.push({ atMs, change })
   }
 
   let pending = schedule(0)
@@ -284,13 +268,13 @@ export function createTrafficSource(options: TrafficSourceOptions): TrafficSourc
     for (;;) {
       const scriptedAtMs = scripted[nextScripted]?.atMs ?? Number.POSITIVE_INFINITY
       const control = controls[nextControl]
-      const controlAtMs = control?.simTime ?? Number.POSITIVE_INFINITY
+      const controlAtMs = control?.atMs ?? Number.POSITIVE_INFINITY
       if (scriptedAtMs <= untilMs && scriptedAtMs <= pending.atMs && scriptedAtMs <= controlAtMs) {
         const { atMs, clientId } = scripted[nextScripted++] as { atMs: number; clientId: ClientId }
         log.push({ requestId: log.length, atMs, clientId, origin: 'scripted' })
       } else if (pending.atMs <= untilMs && pending.atMs <= controlAtMs) {
         const atMs = pending.atMs
-        const clientId = pickClient(spec.clients, weights, stream)
+        const clientId = pickClient(shares, stream)
         log.push({ requestId: log.length, atMs, clientId, origin: 'generated' })
         pending = schedule(atMs)
       } else if (control !== undefined && controlAtMs <= untilMs) {

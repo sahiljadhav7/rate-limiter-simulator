@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createRandomStream, type RandomStream } from '../src/sim/rng.ts'
 import {
   checkTrafficSpec,
-  clientWeights,
+  clientShares,
   gapWork,
   pickClient,
   rateProfile,
@@ -45,13 +45,13 @@ function arrivals(
   untilMs: number,
 ): { atMs: number; clientId: string }[] {
   const profile = rateProfile(spec)
-  const weights = clientWeights(spec)
+  const clientsByShare = clientShares(spec.clients, spec.greedy)
   const result: { atMs: number; clientId: string }[] = []
   let fromMs = 0
   for (;;) {
     const atMs = timeToWork(profile, fromMs, gapWork(spec.shape, stream))
     if (atMs > untilMs) return result
-    result.push({ atMs, clientId: pickClient(spec.clients, weights, stream) })
+    result.push({ atMs, clientId: pickClient(clientsByShare, stream) })
     fromMs = atMs
   }
 }
@@ -260,15 +260,18 @@ describe('Client assignment', () => {
   })
 
   it('maps a draw to the Client whose stretch of cumulative weight contains it', () => {
-    const clients = ['a', 'b', 'c']
-    const weights = [1, 2, 1]
+    const shares = [
+      { clientId: 'a', weight: 1 },
+      { clientId: 'b', weight: 2 },
+      { clientId: 'c', weight: 1 },
+    ]
     // Cumulative weights 1, 3, 4 out of 4: a covers [0, 0.25), b [0.25, 0.75), c [0.75, 1).
-    expect(pickClient(clients, weights, fixedStream([0]))).toBe('a')
-    expect(pickClient(clients, weights, fixedStream([0.2499]))).toBe('a')
-    expect(pickClient(clients, weights, fixedStream([0.25]))).toBe('b')
-    expect(pickClient(clients, weights, fixedStream([0.7499]))).toBe('b')
-    expect(pickClient(clients, weights, fixedStream([0.75]))).toBe('c')
-    expect(pickClient(clients, weights, fixedStream([0.999999]))).toBe('c')
+    expect(pickClient(shares, fixedStream([0]))).toBe('a')
+    expect(pickClient(shares, fixedStream([0.2499]))).toBe('a')
+    expect(pickClient(shares, fixedStream([0.25]))).toBe('b')
+    expect(pickClient(shares, fixedStream([0.7499]))).toBe('b')
+    expect(pickClient(shares, fixedStream([0.75]))).toBe('c')
+    expect(pickClient(shares, fixedStream([0.999999]))).toBe('c')
   })
 
   it.each([

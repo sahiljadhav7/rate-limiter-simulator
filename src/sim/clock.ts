@@ -2,6 +2,7 @@
  * The engine's only notion of time: milliseconds of simulated time. The engine loop moves
  * it to each event's timestamp; wall-clock pacing, speed and frames belong to src/runner.
  */
+import { checkNonNegative, checkNumber } from './checks.ts'
 
 /** The current simulated time, which only ever moves forward. */
 export interface SimClock {
@@ -21,18 +22,14 @@ export interface SimClock {
  * NaN or infinite.
  */
 export function createSimClock(startMs = 0): SimClock {
-  if (!Number.isFinite(startMs) || startMs < 0) {
-    throw new RangeError(`Start time must be a finite number of ms, 0 or more, got ${startMs}`)
-  }
+  checkNonNegative(startMs, 'The start time in ms')
   let current = startMs
   return {
     now() {
       return current
     },
     advanceTo(timeMs) {
-      if (!Number.isFinite(timeMs)) {
-        throw new RangeError(`Simulated time must be a finite number of ms, got ${timeMs}`)
-      }
+      checkNumber(timeMs, () => true, 'Simulated time must be a finite number of ms')
       if (timeMs < current) {
         throw new RangeError(`Simulated time cannot go backwards: at ${current} ms, got ${timeMs}`)
       }

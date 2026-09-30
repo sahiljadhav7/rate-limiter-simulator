@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createBackend, type BackendSpec } from '../src/sim/backend.ts'
 import { createEventQueue } from '../src/sim/event-queue.ts'
 import { createRandomStream } from '../src/sim/rng.ts'
+import { unitExponential } from '../src/sim/traffic.ts'
 
 /** A Backend whose every service takes exactly `meanMs` (cv 0 makes no draw). */
 function fixed(spec: Omit<BackendSpec, 'cv'>) {
@@ -114,13 +115,21 @@ describe('createBackend', () => {
     })
   })
 
+  // Poisson arrivals at twice what the Backend can serve (offered load 2 per slot), so it
+  // overloads and sheds. `busy` is the expected utilization and its band:
+  // - No queue is an Erlang loss system, whose utilization does not depend on the service time
+  //   distribution: offered load 2 on 1 slot gives exactly 2/3. Over 200 seeds the standard
+  //   deviation was 0.0045, so the band of 0.02 is 4.4 of them.
+  // - With a queue there is no exact formula for gamma service times. The expected values are
+  //   the means over 200 seeds (0.9832, sd 0.0018; 0.9996, sd 0.0002), with bands of 4 sd or
+  //   more, capped at 1, which utilization can never pass.
   it.each([
-    { slots: 1, queueLimit: 0 },
-    { slots: 3, queueLimit: 5 },
-    { slots: 8, queueLimit: 40 },
+    { slots: 1, queueLimit: 0, busy: [2 / 3 - 0.02, 2 / 3 + 0.02] },
+    { slots: 3, queueLimit: 5, busy: [0.975, 1] },
+    { slots: 8, queueLimit: 40, busy: [0.998, 1] },
   ])(
     'never has more than $slots busy slots or $queueLimit queued, and utilization stays at most 1',
-    ({ slots, queueLimit }) => {
+    ({ slots, queueLimit, busy }) => {
       const spec = { slots, queueLimit, meanMs: 30, cv: 1.5 }
       const backend = createBackend<number>(spec, createRandomStream(11))
       const ops = createRandomStream(12)
@@ -128,8 +137,7 @@ describe('createBackend', () => {
       const held: number[] = []
       let t = 0
       for (let job = 0; job < 20_000; job++) {
-        // Arrivals about twice as fast as the Backend can serve, so it overloads and sheds.
-        t += (ops.next() * 30) / slots
+        t += (unitExponential(ops) * 15) / slots
         while ((ends.peek()?.timeMs ?? Infinity) <= t) {
           const end = ends.pop()
           if (end === undefined) break
@@ -145,10 +153,9 @@ describe('createBackend', () => {
       }
       const { busySlotMs, wastedSlotMs } = backend.measure(t)
       expect(busySlotMs).toBeLessThanOrEqual(slots * t)
-      // Busy most of the time, so the bound is really tested. With no queue it is an Erlang loss
-      // system at offered load 2, busy 2/3 of the time (0.72 measured on this fixed seed);
-      // with a queue it is above 0.95. 0.6 is a floor, not a tolerance band.
-      expect(busySlotMs).toBeGreaterThan(0.6 * slots * t)
+      const [low, high] = busy as [number, number]
+      expect(busySlotMs / (slots * t)).toBeGreaterThanOrEqual(low)
+      expect(busySlotMs / (slots * t)).toBeLessThanOrEqual(high)
       expect(wastedSlotMs).toBeGreaterThan(0)
       expect(wastedSlotMs).toBeLessThanOrEqual(busySlotMs)
     },

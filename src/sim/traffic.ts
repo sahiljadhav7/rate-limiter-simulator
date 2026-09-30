@@ -6,6 +6,8 @@
  * work separate from the rate lets a control change rescale a gap already in progress
  * without a new draw (see .scratch/traffic/spec.md, decision 5).
  */
+import { checkNonNegative, checkPositive } from './checks.ts'
+import { bucketAt, bucketStart } from './buckets.ts'
 import type { RandomStream } from './rng.ts'
 
 /**
@@ -47,11 +49,6 @@ export interface TrafficSpec {
   readonly bursty?: BurstyPhases
 }
 
-/** Throws a RangeError unless `value` is a finite number that `ok` accepts. */
-function checkNumber(value: number, ok: (value: number) => boolean, what: string): void {
-  if (!Number.isFinite(value) || !ok(value)) throw new RangeError(`${what}, got ${value}`)
-}
-
 /**
  * Throws a RangeError if the spec cannot produce a meaningful run: Demand must be a finite
  * number, 0 or more; Clients must be listed once each, at least one, with any greedy Client
@@ -60,7 +57,7 @@ function checkNumber(value: number, ok: (value: number) => boolean, what: string
  * can switch the shape to bursty later.
  */
 export function checkTrafficSpec(spec: TrafficSpec): void {
-  checkNumber(spec.demandRps, (v) => v >= 0, 'Demand must be a finite number of rps, 0 or more')
+  checkDemand(spec.demandRps)
   if (spec.shape === 'bursty' && spec.bursty === undefined) {
     throw new RangeError('Bursty traffic needs on and off phases')
   }
@@ -69,27 +66,28 @@ export function checkTrafficSpec(spec: TrafficSpec): void {
     throw new RangeError(`Clients must be listed once each, got ${spec.clients.join(', ')}`)
   }
   if (spec.greedy !== undefined) {
-    if (!spec.clients.includes(spec.greedy.clientId)) {
-      throw new RangeError(`The greedy Client ${spec.greedy.clientId} is not one of the Clients`)
-    }
-    checkNumber(
-      spec.greedy.multiplier,
-      (v) => v > 0,
-      'The greedy multiplier must be finite and more than 0',
-    )
+    checkGreedy(spec, spec.greedy.clientId, spec.greedy.multiplier)
   }
   if (spec.bursty !== undefined) {
-    checkNumber(
-      spec.bursty.onMs,
-      (v) => v > 0,
-      'The on phase must be a finite number of ms, more than 0',
-    )
-    checkNumber(
-      spec.bursty.offMs,
-      (v) => v >= 0,
-      'The off phase must be a finite number of ms, 0 or more',
-    )
+    checkPositive(spec.bursty.onMs, 'The on phase in ms')
+    checkNonNegative(spec.bursty.offMs, 'The off phase in ms')
   }
+}
+
+/** Throws a RangeError unless `demandRps` is a valid Demand: 0 or more Requests per second. */
+export function checkDemand(demandRps: number): void {
+  checkNonNegative(demandRps, 'Demand in Requests per second')
+}
+
+/**
+ * Throws a RangeError unless `clientId` is one of the spec's Clients and `multiplier`, its
+ * shares of Demand, is more than 0.
+ */
+export function checkGreedy(spec: TrafficSpec, clientId: ClientId, multiplier: number): void {
+  if (!spec.clients.includes(clientId)) {
+    throw new RangeError(`The greedy Client ${clientId} is not one of the Clients`)
+  }
+  checkPositive(multiplier, 'The greedy multiplier')
 }
 
 /**
@@ -137,15 +135,11 @@ function phaseSegmentAt(profile: RateProfile, timeMs: number): Segment {
     return { rateRps: demandRps, endMs: Number.POSITIVE_INFINITY }
   }
   const periodMs = phases.onMs + phases.offMs
-  // Every cycle edge comes from this one expression. Computing the same edge two ways (say
-  // start + period and anchor + (cycle + 1) x period) can round differently, and then a walk
-  // that lands on an edge gets a stretch of zero length and never moves on.
-  const cycleStart = (cycle: number) => profile.phaseAnchorMs + cycle * periodMs
-  // The cycle containing timeMs. Rounding in the division can land one cycle off near an
-  // edge, so correct it against the same edges returned below.
-  let cycle = Math.floor((timeMs - profile.phaseAnchorMs) / periodMs)
-  if (timeMs < cycleStart(cycle)) cycle -= 1
-  if (timeMs >= cycleStart(cycle + 1)) cycle += 1
+  // Every cycle edge comes from bucketStart. Computing the same edge two ways (say start +
+  // period and anchor + (cycle + 1) x period) can round differently, and then a walk that
+  // lands on an edge gets a stretch of zero length and never moves on.
+  const cycleStart = (cycle: number) => bucketStart(cycle, periodMs, profile.phaseAnchorMs)
+  const cycle = bucketAt(timeMs, periodMs, profile.phaseAnchorMs)
   const onEndMs = cycleStart(cycle) + phases.onMs
   if (timeMs < onEndMs) return { rateRps: (demandRps * periodMs) / phases.onMs, endMs: onEndMs }
   // timeMs < cycleStart(cycle + 1) by the correction above, so the stretch always has length.
@@ -195,12 +189,25 @@ export function timeToWork(profile: RateProfile, fromMs: number, work: number): 
   }
 }
 
+/** A Client and its weight: how many shares of Demand it gets. */
+export interface ClientShare {
+  readonly clientId: ClientId
+  readonly weight: number
+}
+
 /**
- * Each Client's share weight, in listed order: 1, or the multiplier for the greedy Client.
- * Weights split Demand between Clients; they never change the total (spec decision 1).
+ * Each Client's share, in listed order: weight 1, or the multiplier for the one greedy Client
+ * (`greedy`, when given). Shares split Demand between Clients; they never change the total
+ * (spec decision 1).
  */
-export function clientWeights(spec: TrafficSpec): number[] {
-  return spec.clients.map((id) => (id === spec.greedy?.clientId ? spec.greedy.multiplier : 1))
+export function clientShares(
+  clients: readonly ClientId[],
+  greedy?: { readonly clientId: ClientId; readonly multiplier: number },
+): ClientShare[] {
+  return clients.map((clientId) => ({
+    clientId,
+    weight: clientId === greedy?.clientId ? greedy.multiplier : 1,
+  }))
 }
 
 /**
@@ -209,19 +216,15 @@ export function clientWeights(spec: TrafficSpec): number[] {
  * Scenario was written). It draws even when there is one Client, so every arrival uses the
  * same number of draws and arrival times never depend on the Clients or their weights.
  */
-export function pickClient(
-  clients: readonly ClientId[],
-  weights: readonly number[],
-  stream: RandomStream,
-): ClientId {
-  const total = weights.reduce((sum, weight) => sum + weight, 0)
+export function pickClient(shares: readonly ClientShare[], stream: RandomStream): ClientId {
+  const total = shares.reduce((sum, share) => sum + share.weight, 0)
   let target = stream.next() * total
-  for (let i = 0; i < clients.length; i++) {
-    target -= weights[i] ?? 0
-    if (target < 0) return clients[i] as ClientId
+  for (const share of shares) {
+    target -= share.weight
+    if (target < 0) return share.clientId
   }
   // Rounding can leave a hair of weight at the end; it belongs to the last Client.
-  return clients[clients.length - 1] as ClientId
+  return (shares[shares.length - 1] as ClientShare).clientId
 }
 
 /**

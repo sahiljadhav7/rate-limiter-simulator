@@ -4,6 +4,7 @@
  *
  * Only 'none' and 'immediate' exist so far; RS-12 adds backoff, jitter and Retry-After.
  */
+import { checkPositive, checkWholeNumber } from './checks.ts'
 
 /** One Variant's Retry Policy. */
 export interface RetryPolicy {
@@ -17,16 +18,8 @@ export interface RetryPolicy {
 
 /** Throws a RangeError if the policy is invalid. */
 export function checkRetryPolicy(policy: RetryPolicy): void {
-  if (!Number.isFinite(policy.timeoutMs) || policy.timeoutMs <= 0) {
-    throw new RangeError(
-      `The timeout must be a finite number of ms, more than 0, got ${policy.timeoutMs}`,
-    )
-  }
-  if (!Number.isInteger(policy.maxAttempts) || policy.maxAttempts < 1) {
-    throw new RangeError(
-      `Max attempts must be a whole number, 1 or more, got ${policy.maxAttempts}`,
-    )
-  }
+  checkPositive(policy.timeoutMs, 'The timeout in ms')
+  checkWholeNumber(policy.maxAttempts, 1, 'The most Attempts per Request')
   if (policy.retry !== 'none' && policy.retry !== 'immediate') {
     throw new RangeError(`Unknown retry mode, got ${String(policy.retry)}`)
   }

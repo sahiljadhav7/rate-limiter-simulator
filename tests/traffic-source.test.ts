@@ -233,7 +233,7 @@ describe('demand changes', () => {
       stream: createRandomStream(1),
     })
     source.advanceTo(50)
-    source.applyControl({ kind: 'demand', rps: 20 })
+    source.applyControl({ kind: 'demand', demandRps: 20 })
     source.advanceTo(200)
     expect(readAll(source).map((a) => a.atMs)).toEqual([75, 125, 175])
   })
@@ -248,9 +248,9 @@ describe('demand changes', () => {
       spec: { shape: 'poisson', demandRps: 100, clients: ['a'] },
       stream: createRandomStream(606),
     })
-    for (const [atMs, rps] of steps) {
+    for (const [atMs, demandRps] of steps) {
       source.advanceTo(atMs)
-      source.applyControl({ kind: 'demand', rps })
+      source.applyControl({ kind: 'demand', demandRps })
     }
     source.advanceTo(untilMs)
     return readAll(source)
@@ -365,7 +365,7 @@ describe('greedy multiplier changes', () => {
   function run(withChange: boolean): Arrival[] {
     const source = createTrafficSource({ spec, stream: createRandomStream(12) })
     source.advanceTo(30_000)
-    if (withChange) source.applyControl({ kind: 'greedyMultiplier', clientId: 'b', x: 5 })
+    if (withChange) source.applyControl({ kind: 'greedyMultiplier', clientId: 'b', multiplier: 5 })
     source.advanceTo(150_000)
     return readAll(source)
   }
@@ -392,7 +392,7 @@ describe('greedy multiplier changes', () => {
       stream: createRandomStream(12),
     })
     source.advanceTo(30_000)
-    source.applyControl({ kind: 'greedyMultiplier', clientId: 'c', x: 5 })
+    source.applyControl({ kind: 'greedyMultiplier', clientId: 'c', multiplier: 5 })
     source.advanceTo(150_000)
     const after = readAll(source).filter((a) => a.atMs > 30_000)
     const share = (id: string) => after.filter((a) => a.clientId === id).length / after.length
@@ -447,10 +447,13 @@ describe('control validation', () => {
   const spec: TrafficSpec = { shape: 'poisson', demandRps: 100, clients: ['a', 'b'] }
 
   it.each([
-    ['a negative Demand', { kind: 'demand', rps: -1 }],
-    ['a NaN Demand', { kind: 'demand', rps: Number.NaN }],
-    ['a greedy Client that is not listed', { kind: 'greedyMultiplier', clientId: 'z', x: 2 }],
-    ['a greedy multiplier of 0', { kind: 'greedyMultiplier', clientId: 'a', x: 0 }],
+    ['a negative Demand', { kind: 'demand', demandRps: -1 }],
+    ['a NaN Demand', { kind: 'demand', demandRps: Number.NaN }],
+    [
+      'a greedy Client that is not listed',
+      { kind: 'greedyMultiplier', clientId: 'z', multiplier: 2 },
+    ],
+    ['a greedy multiplier of 0', { kind: 'greedyMultiplier', clientId: 'a', multiplier: 0 }],
     ['a burst multiplier of 0', { kind: 'burst', multiplier: 0, durationMs: 100 }],
     ['a burst of 0 ms', { kind: 'burst', multiplier: 2, durationMs: 0 }],
     ['an infinite burst', { kind: 'burst', multiplier: 2, durationMs: Infinity }],
@@ -461,13 +464,15 @@ describe('control validation', () => {
     (_name, change) => {
       const source = createTrafficSource({ spec, stream: createRandomStream(9) })
       source.advanceTo(1_000)
-      source.applyControl({ kind: 'demand', rps: 150 })
+      source.applyControl({ kind: 'demand', demandRps: 150 })
       expect(() => source.applyControl(change)).toThrow(RangeError)
-      expect(source.timeline()).toEqual([{ simTime: 1_000, change: { kind: 'demand', rps: 150 } }])
+      expect(source.timeline()).toEqual([
+        { atMs: 1_000, change: { kind: 'demand', demandRps: 150 } },
+      ])
       source.advanceTo(5_000)
       const untouched = createTrafficSource({ spec, stream: createRandomStream(9) })
       untouched.advanceTo(1_000)
-      untouched.applyControl({ kind: 'demand', rps: 150 })
+      untouched.applyControl({ kind: 'demand', demandRps: 150 })
       untouched.advanceTo(5_000)
       expect(readAll(source)).toEqual(readAll(untouched))
     },
@@ -486,10 +491,11 @@ describe('control timeline and replay', () => {
   /** A random control change of any kind, drawn from `rng`. */
   function randomChange(rng: ReturnType<typeof createRandomStream>): ControlChange {
     const kind = rng.next()
-    if (kind < 0.3) return { kind: 'demand', rps: Math.round(rng.next() * 400) }
+    if (kind < 0.3) return { kind: 'demand', demandRps: Math.round(rng.next() * 400) }
     if (kind < 0.5)
       return { kind: 'burst', multiplier: 1 + rng.next() * 4, durationMs: 100 + rng.next() * 3000 }
-    if (kind < 0.7) return { kind: 'greedyMultiplier', clientId: 'b', x: 1 + rng.next() * 9 }
+    if (kind < 0.7)
+      return { kind: 'greedyMultiplier', clientId: 'b', multiplier: 1 + rng.next() * 9 }
     const shapes = ['constant', 'poisson', 'bursty'] as const
     return { kind: 'shape', shape: shapes[Math.floor(rng.next() * 3)] ?? 'poisson' }
   }
@@ -530,7 +536,7 @@ describe('control timeline and replay', () => {
     const source = createTrafficSource({
       spec: { shape: 'constant', demandRps: 10, clients: ['a'] },
       stream: createRandomStream(1),
-      controls: [{ simTime: 100, change: { kind: 'demand', rps: 20 } }],
+      controls: [{ atMs: 100, change: { kind: 'demand', demandRps: 20 } }],
     })
     source.advanceTo(200)
     // The arrival at exactly 100 happens at the old rate; the gap after it is 50 ms.
@@ -538,7 +544,7 @@ describe('control timeline and replay', () => {
   })
 
   it('records scripted and live changes in the order applied', () => {
-    const scripted = { simTime: 100, change: { kind: 'demand', rps: 20 } } as const
+    const scripted = { atMs: 100, change: { kind: 'demand', demandRps: 20 } } as const
     const source = createTrafficSource({
       spec,
       stream: createRandomStream(1),
@@ -549,7 +555,7 @@ describe('control timeline and replay', () => {
     source.applyControl({ kind: 'burst', multiplier: 2, durationMs: 50 })
     expect(source.timeline()).toEqual([
       scripted,
-      { simTime: 300, change: { kind: 'burst', multiplier: 2, durationMs: 50 } },
+      { atMs: 300, change: { kind: 'burst', multiplier: 2, durationMs: 50 } },
     ])
   })
 
@@ -557,13 +563,13 @@ describe('control timeline and replay', () => {
     [
       'unsorted controls',
       [
-        { simTime: 200, change: { kind: 'demand', rps: 1 } },
-        { simTime: 100, change: { kind: 'demand', rps: 2 } },
+        { atMs: 200, change: { kind: 'demand', demandRps: 1 } },
+        { atMs: 100, change: { kind: 'demand', demandRps: 2 } },
       ],
     ],
-    ['a negative time', [{ simTime: -1, change: { kind: 'demand', rps: 1 } }]],
-    ['a NaN time', [{ simTime: Number.NaN, change: { kind: 'demand', rps: 1 } }]],
-    ['an invalid change', [{ simTime: 10, change: { kind: 'demand', rps: -1 } }]],
+    ['a negative time', [{ atMs: -1, change: { kind: 'demand', demandRps: 1 } }]],
+    ['a NaN time', [{ atMs: Number.NaN, change: { kind: 'demand', demandRps: 1 } }]],
+    ['an invalid change', [{ atMs: 10, change: { kind: 'demand', demandRps: -1 } }]],
   ] as [string, ControlEvent[]][])('rejects %s up front', (_name, controls) => {
     expect(() => createTrafficSource({ spec, stream: createRandomStream(1), controls })).toThrow(
       RangeError,

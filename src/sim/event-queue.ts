@@ -2,6 +2,7 @@
  * The priority queue that orders simulated events: a binary min-heap keyed by time, then by
  * sequence number. The engine defines its own event types and stores them as the payload.
  */
+import { checkNumber } from './checks.ts'
 
 /** An event waiting in the queue, with the time it happens and its place in push order. */
 export interface ScheduledEvent<T> {
@@ -87,9 +88,7 @@ export function createEventQueue<T>(): EventQueue<T> {
 
   return {
     push(timeMs, event) {
-      if (!Number.isFinite(timeMs)) {
-        throw new RangeError(`Event time must be a finite number of ms, got ${timeMs}`)
-      }
+      checkNumber(timeMs, () => true, 'Event time must be a finite number of ms')
       const entry: ScheduledEvent<T> = { timeMs, seq: nextSeq++, event }
       heap.push(entry)
       siftUp(heap.length - 1, entry)

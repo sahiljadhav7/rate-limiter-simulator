@@ -7,6 +7,8 @@
  * its place in the queue, until its service ends; that time is Wasted Work
  * (.scratch/engine/spec.md, decision 1).
  */
+import { checkNonNegative, checkPositive, checkWholeNumber } from './checks.ts'
+import { createFifo } from './fifo.ts'
 import type { RandomStream } from './rng.ts'
 
 /** How big and how fast the Backend is. */
@@ -99,20 +101,13 @@ function serviceTimeMs(spec: BackendSpec, stream: RandomStream): number {
 /** Throws a RangeError if the spec cannot describe a working Backend. */
 export function checkBackendSpec(spec: BackendSpec): void {
   const { slots, queueLimit, meanMs, cv } = spec
-  if (!Number.isInteger(slots) || slots < 1) {
-    throw new RangeError(`Backend slots must be a whole number, 1 or more, got ${slots}`)
-  }
-  if (!Number.isInteger(queueLimit) || queueLimit < 0) {
-    throw new RangeError(`The queue limit must be a whole number, 0 or more, got ${queueLimit}`)
-  }
-  if (!Number.isFinite(meanMs) || meanMs <= 0) {
-    throw new RangeError(
-      `Mean service time must be a finite number of ms, more than 0, got ${meanMs}`,
-    )
-  }
-  if (!Number.isFinite(cv) || cv < 0) {
-    throw new RangeError(`The service time cv must be a finite number, 0 or more, got ${cv}`)
-  }
+  checkWholeNumber(slots, 1, 'Backend slots')
+  checkWholeNumber(queueLimit, 0, 'The queue limit')
+  checkPositive(meanMs, 'The mean service time in ms')
+  checkNonNegative(
+    cv,
+    'The coefficient of variation of the service time (how spread out service times are)',
+  )
 }
 
 /**
@@ -122,15 +117,12 @@ export function checkBackendSpec(spec: BackendSpec): void {
 export function createBackend<T>(spec: BackendSpec, stream: RandomStream): Backend<T> {
   checkBackendSpec(spec)
   const inService = new Set<T>()
-  /** Every queued job, for `abandon`; the array below keeps their order. */
+  /** Every queued job, for `abandon`; `queue` keeps their order. */
   const waiting = new Set<T>()
   const abandoned = new Set<T>()
   /** How many jobs in service are abandoned. */
   let wastingSlots = 0
-  // A first-in, first-out queue: jobs are taken from `head`, and the array is compacted now
-  // and then so a long run does not keep every job ever queued.
-  let queue: T[] = []
-  let head = 0
+  const queue = createFifo<T>()
   let busySlotMs = 0
   let wastedSlotMs = 0
   let lastMs = 0
@@ -156,7 +148,7 @@ export function createBackend<T>(spec: BackendSpec, stream: RandomStream): Backe
     submit(job, nowMs) {
       accrue(nowMs)
       if (inService.size < spec.slots) return { kind: 'started', endsAtMs: start(job, nowMs) }
-      if (queue.length - head < spec.queueLimit) {
+      if (queue.size() < spec.queueLimit) {
         queue.push(job)
         waiting.add(job)
         return { kind: 'queued' }
@@ -168,13 +160,9 @@ export function createBackend<T>(spec: BackendSpec, stream: RandomStream): Backe
       accrue(nowMs)
       inService.delete(job)
       if (abandoned.delete(job)) wastingSlots--
-      if (head === queue.length) return null
-      const next = queue[head++] as T
+      if (queue.size() === 0) return null
+      const next = queue.shift() as T
       waiting.delete(next)
-      if (head > 1024 && head * 2 > queue.length) {
-        queue = queue.slice(head)
-        head = 0
-      }
       return { job: next, endsAtMs: start(next, nowMs) }
     },
     abandon(job, nowMs) {
@@ -192,7 +180,7 @@ export function createBackend<T>(spec: BackendSpec, stream: RandomStream): Backe
       return { busySlotMs, wastedSlotMs }
     },
     queueDepth() {
-      return queue.length - head
+      return queue.size()
     },
     busySlots() {
       return inService.size
