@@ -72,8 +72,8 @@ export interface TrafficSource {
 export type ControlChange =
   | { readonly kind: 'demand'; readonly rps: number }
   /**
-   * Sets one Client's share weight to `x`. Other Clients keep theirs, so moving the multiplier
-   * to a new Client leaves the previous greedy Client's weight as it was.
+   * Makes `clientId` the one greedy Client, with `x` shares of Demand; every other Client,
+   * including a previous greedy one, goes back to 1 share. `x` of 1 means no greedy Client.
    */
   | { readonly kind: 'greedyMultiplier'; readonly clientId: ClientId; readonly x: number }
   | { readonly kind: 'burst'; readonly multiplier: number; readonly durationMs: number }
@@ -251,7 +251,9 @@ export function createTrafficSource(options: TrafficSourceOptions): TrafficSourc
         }
         break
       case 'greedyMultiplier':
-        // Only who sends changes: the next pick uses the new weights.
+        // Only who sends changes: the next pick uses the new weights. One greedy Client at a
+        // time, so every other Client goes back to 1 share.
+        weights.fill(1)
         weights[spec.clients.indexOf(change.clientId)] = change.x
         break
       case 'shape':

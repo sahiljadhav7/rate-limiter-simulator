@@ -431,6 +431,7 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
   - *AC:* utilization is <= 1 and queue never exceeds the limit.
 - **RS-6 Engine loop + Metrics collector [Core]** (2h): `ARRIVAL`, `DECISION`, `SERVICE_END`, `RETRY`, `TIMEOUT`, `SAMPLE` events; produces `Snapshot`; tracks each Request across its Attempts; records Attempt and end-to-end latency ring buffers, warm-up flag, and allowed counts at window/10 resolution. *Depends on RS-3 to RS-5.*
   - *AC:* Attempt and Request conservation hold; warm-up seconds are flagged; sub-bucket counts sum to the allowed total.
+  - *Note (2026-09-30):* Demand in the Snapshot is counted from new Requests actually generated (bursts and scripted arrivals included), not read from the slider, so Retry Amplification stays true during a burst. See `.scratch/traffic/spec.md` decision 7.
 
 ## Epic 2: Limiters and client behavior
 - **RS-7 Limiter interface + Fixed Window [Core]** (1.5h): includes `keyBy` scope and the three-way Limiter Decision (Allow, Reject, Delay) with the engine's `RELEASE` handling, so leaky bucket can be added later without changing the interface (D10).

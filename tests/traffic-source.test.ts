@@ -382,6 +382,23 @@ describe('greedy multiplier changes', () => {
   it('leaves every arrival time unchanged', () => {
     expect(run(true).map((a) => a.atMs)).toEqual(run(false).map((a) => a.atMs))
   })
+  // There is one greedy Client at a time (the noisy-neighbor lesson is about one heavy
+  // Client), so moving the multiplier from b to c puts b back to 1 share. Weights 1, 1, 5, 1:
+  // c's share is 5 / 8 (band 0.013, about 4.2 standard errors) and b's is 1 / 8 (band 0.009,
+  // about 4.2).
+  it('moves the greedy role: the previous greedy Client goes back to 1 share', () => {
+    const source = createTrafficSource({
+      spec: { ...spec, greedy: { clientId: 'b', multiplier: 5 } },
+      stream: createRandomStream(12),
+    })
+    source.advanceTo(30_000)
+    source.applyControl({ kind: 'greedyMultiplier', clientId: 'c', x: 5 })
+    source.advanceTo(150_000)
+    const after = readAll(source).filter((a) => a.atMs > 30_000)
+    const share = (id: string) => after.filter((a) => a.clientId === id).length / after.length
+    expect(Math.abs(share('c') - 5 / 8)).toBeLessThan(0.013)
+    expect(Math.abs(share('b') - 1 / 8)).toBeLessThan(0.009)
+  })
 })
 
 describe('shape changes', () => {
