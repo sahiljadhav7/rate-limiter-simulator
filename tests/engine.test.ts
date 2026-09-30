@@ -527,6 +527,34 @@ describe('createEngine', () => {
       }
     })
 
+    it('gives identical results whether or not the totals are read along the way', () => {
+      // A runner or UI reads the totals every frame. Reading must not change the run: the
+      // same seed has to replay the same numbers however often anyone looks.
+      const stops = every(10)
+      const quiet = run(mixed(), stops)
+      const setup = mixed()
+      const source = createTrafficSource({
+        spec: setup.traffic,
+        stream: createStreams(99).traffic,
+        scriptedArrivals: setup.scripted ?? [],
+      })
+      const watched = createEngine({
+        traffic: source.reader(),
+        limiter: setup.limiter ?? allowAll(),
+        retry: setup.retry ?? noRetry,
+        backend: setup.backend ?? quickBackend,
+        streams: createStreams(99),
+        decisionDelayMs: 2,
+      })
+      for (const stop of stops) {
+        source.advanceTo(stop)
+        watched.advanceTo(stop)
+        watched.totals()
+      }
+      expect(watched.snapshots()).toEqual(quiet.snapshots())
+      expect(watched.totals()).toEqual(quiet.totals())
+    })
+
     it('has Snapshots that add up to the totals', () => {
       const engine = run(mixed(), [UNTIL_MS])
       const snapshots = engine.snapshots()

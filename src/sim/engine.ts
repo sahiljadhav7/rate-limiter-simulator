@@ -93,7 +93,7 @@ export interface Engine {
   snapshots(): readonly Snapshot[]
   /**
    * Allowed Attempts per sub-bucket since 0: `counts[i]` covers [i x bucketMs, (i + 1) x
-   * bucketMs). Filled up to the last whole second.
+   * bucketMs).
    */
   allowedSubBuckets(): { readonly bucketMs: number; readonly counts: readonly number[] }
 }

@@ -54,7 +54,8 @@ export interface Backend<T> {
   /**
    * Slot time from 0 to `nowMs`, in ms: one slot serving for 1 ms counts 1. `busySlotMs`
    * counts all service, `wastedSlotMs` the part spent on abandoned jobs. Utilization over a
-   * span is the busy time in it divided by slots x the span's length.
+   * span is the busy time in it divided by slots x the span's length. Only reads: measuring
+   * as often as you like never changes a later result.
    */
   measure(nowMs: number): { readonly busySlotMs: number; readonly wastedSlotMs: number }
   /** How many Attempts wait for a slot. */
@@ -127,11 +128,16 @@ export function createBackend<T>(spec: BackendSpec, stream: RandomStream): Backe
   let wastedSlotMs = 0
   let lastMs = 0
 
-  /** Adds the busy time since the last change and moves to `nowMs`, which never goes back. */
-  function accrue(nowMs: number): void {
+  /** Throws a RangeError if `nowMs` is before the last change. */
+  function checkForward(nowMs: number): void {
     if (!(nowMs >= lastMs)) {
       throw new RangeError(`Backend time cannot go backwards: at ${lastMs} ms, got ${nowMs}`)
     }
+  }
+
+  /** Adds the busy time since the last change and moves to `nowMs`, which never goes back. */
+  function accrue(nowMs: number): void {
+    checkForward(nowMs)
     busySlotMs += inService.size * (nowMs - lastMs)
     wastedSlotMs += wastingSlots * (nowMs - lastMs)
     lastMs = nowMs
@@ -176,8 +182,15 @@ export function createBackend<T>(spec: BackendSpec, stream: RandomStream): Backe
       }
     },
     measure(nowMs) {
-      accrue(nowMs)
-      return { busySlotMs, wastedSlotMs }
+      // Reads without moving the running totals, so measuring never changes a later result:
+      // the totals are only ever split at submit, finish and abandon, which happen at the same
+      // times however often anyone measures. Adding a partial sum here and the rest later
+      // would round differently in the last bits.
+      checkForward(nowMs)
+      return {
+        busySlotMs: busySlotMs + inService.size * (nowMs - lastMs),
+        wastedSlotMs: wastedSlotMs + wastingSlots * (nowMs - lastMs),
+      }
     },
     queueDepth() {
       return queue.size()
