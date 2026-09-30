@@ -10,8 +10,13 @@
  * cannot make a stream outside the named set or time arrivals on its own; engine modules and
  * tests import them from their own files.
  */
+export type { BackendSpec } from './backend.ts'
 export { createSimClock, type SimClock } from './clock.ts'
+export { createEngine, type Engine, type EngineOptions, type Totals } from './engine.ts'
 export { createEventQueue, type EventQueue, type ScheduledEvent } from './event-queue.ts'
+export type { Limiter, LimiterDecision } from './limiter.ts'
+export type { Snapshot } from './metrics.ts'
+export type { RetryPolicy } from './retry-policy.ts'
 export {
   createStreams,
   STREAM_NAMES,

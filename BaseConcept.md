@@ -313,7 +313,8 @@ interface VariantConfig {
 }
 
 interface Snapshot {
-  t: number;
+  t: number;                 // end of the second it covers: [t - 1000, t)
+  warmUp: boolean;           // t <= 5000, left out of diagnosis (D4)
   demand: number;            // new Requests
   offeredLoad: number;       // Attempts, retries included
   allowed: number;
@@ -325,12 +326,12 @@ interface Snapshot {
   backendUtil: number;
   queueDepth: number;
   shed: number;
-  p50: number;
-  p95: number;
-  p99: number;               // Attempt latency percentiles
-  e2eP50: number;
-  e2eP95: number;
-  e2eP99: number;            // end-to-end, Succeeded Requests only
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;        // Attempt latency percentiles over the last 5 s; null (a dash) when none completed
+  e2eP50: number | null;
+  e2eP95: number | null;
+  e2eP99: number | null;     // end-to-end, Succeeded Requests only
   perClient: Record<ClientId, { sent: number; allowed: number }>;
 }
 ```
