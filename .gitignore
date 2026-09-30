@@ -1,1 +1,4 @@
 *:Zone.Identifier
+
+*.md
+!README.md
