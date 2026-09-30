@@ -17,9 +17,11 @@ export { createEventQueue, type EventQueue, type ScheduledEvent } from './event-
 export {
   createLimiter,
   type FixedWindowSpec,
+  type KeyBy,
   type Limiter,
   type LimiterDecision,
   type LimiterSpec,
+  type TokenBucketSpec,
 } from './limiter.ts'
 export type { Snapshot } from './metrics.ts'
 export type { RetryPolicy } from './retry-policy.ts'

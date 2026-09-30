@@ -22,29 +22,53 @@ export interface Limiter {
   reset(): void
 }
 
+/** Whether a Limiter keeps one count shared by every Client, or one count per Client (D2). */
+export type KeyBy = 'global' | 'client'
+
 /**
  * Fixed window: each key may have `limit` Attempts allowed per window. Windows start at 0,
  * so window k covers [k x windowMs, (k + 1) x windowMs) for every key and every Variant.
  */
 export interface FixedWindowSpec {
   readonly algo: 'fixed-window'
-  /** One count shared by every Client, or one count per Client. */
-  readonly keyBy: 'global' | 'client'
+  readonly keyBy: KeyBy
   /** Attempts allowed per window, per key: a whole number, 1 or more. */
   readonly limit: number
   /** The window length, in ms. */
   readonly windowMs: number
 }
 
-/** What a Variant's Limiter is built from. Each algorithm adds its own member. */
-export type LimiterSpec = FixedWindowSpec
+/**
+ * Token bucket: each key has a bucket of `capacity` tokens, full at the start, that refills
+ * continuously at `refillPerSec` up to `capacity`. An Attempt takes one token, or is rejected
+ * when there is not a whole one. A quiet key can spend a full bucket at once, so it allows
+ * bursts up to `capacity`.
+ */
+export interface TokenBucketSpec {
+  readonly algo: 'token-bucket'
+  readonly keyBy: KeyBy
+  /** Tokens the bucket holds, and so the largest burst: a whole number, 1 or more. */
+  readonly capacity: number
+  /** Tokens added per second, more than 0: the long-run rate allowed. */
+  readonly refillPerSec: number
+}
 
-/** The key every Attempt counts against when a Limiter is keyed globally. */
-const GLOBAL_KEY = ''
+/** What a Variant's Limiter is built from. Each algorithm adds its own member. */
+export type LimiterSpec = FixedWindowSpec | TokenBucketSpec
+
+/** The key an Attempt from `clientId` counts against: its Client, or one key for all. */
+function keyFor(keyBy: KeyBy, clientId: ClientId): string {
+  return keyBy === 'client' ? clientId : ''
+}
 
 /** Creates the Limiter `spec` describes. */
 export function createLimiter(spec: LimiterSpec): Limiter {
-  return createFixedWindow(spec)
+  switch (spec.algo) {
+    case 'fixed-window':
+      return createFixedWindow(spec)
+    case 'token-bucket':
+      return createTokenBucket(spec)
+  }
 }
 
 function createFixedWindow(spec: FixedWindowSpec): Limiter {
@@ -69,11 +93,11 @@ function createFixedWindow(spec: FixedWindowSpec): Limiter {
     return k
   }
   /** Per key: the window its count belongs to, and the Attempts allowed in it. */
-  const counts = new Map<ClientId, { window: number; allowed: number }>()
+  const counts = new Map<string, { window: number; allowed: number }>()
   return {
     decide(clientId, nowMs) {
       const window = windowAt(nowMs)
-      const key = keyBy === 'client' ? clientId : GLOBAL_KEY
+      const key = keyFor(keyBy, clientId)
       let entry = counts.get(key)
       if (entry === undefined) {
         entry = { window, allowed: 0 }
@@ -90,6 +114,43 @@ function createFixedWindow(spec: FixedWindowSpec): Limiter {
     },
     reset() {
       counts.clear()
+    },
+  }
+}
+
+function createTokenBucket(spec: TokenBucketSpec): Limiter {
+  const { keyBy, capacity, refillPerSec } = spec
+  if (!Number.isSafeInteger(capacity) || capacity < 1) {
+    throw new RangeError(
+      `A token bucket's capacity must be a whole number, 1 or more, got ${capacity}`,
+    )
+  }
+  if (!Number.isFinite(refillPerSec) || refillPerSec <= 0) {
+    throw new RangeError(
+      `A token bucket's refill rate must be a finite number per second, more than 0, got ${refillPerSec}`,
+    )
+  }
+  /** How long one token takes to come back, in ms. */
+  const tokenMs = 1000 / refillPerSec
+  /**
+   * Per key, the time its bucket will be full again, in ms. The bucket is kept as this time
+   * rather than a token count: at `nowMs` it holds capacity - (fullAt - nowMs) / tokenMs
+   * tokens, so it has a whole token when nowMs >= fullAt - (capacity - 1) x tokenMs. Comparing
+   * times keeps the retry time exact, where a count would leave 0.9999999 of a token. A key
+   * not in the map has a full bucket.
+   */
+  const fullAt = new Map<string, number>()
+  return {
+    decide(clientId, nowMs) {
+      const key = keyFor(keyBy, clientId)
+      const full = Math.max(fullAt.get(key) ?? nowMs, nowMs)
+      const tokenAt = full - (capacity - 1) * tokenMs
+      if (nowMs < tokenAt) return { kind: 'reject', retryAfterMs: tokenAt - nowMs }
+      fullAt.set(key, full + tokenMs)
+      return { kind: 'allow' }
+    },
+    reset() {
+      fullAt.clear()
     },
   }
 }
