@@ -1,10 +1,11 @@
 /*
- * Design tokens from DESIGN.md, copied verbatim. The dark block is written twice, under the
- * system preference and under data-theme="dark"; RS-17 generates both from one source so they
- * cannot drift. Until then, change one only together with the other.
+ * Design tokens from DESIGN.md. Each colour is written once as light-dark(<light>, <dark>), so
+ * the two themes cannot drift; tests/tokens.test.ts checks both against DESIGN.md. Which one
+ * applies follows color-scheme: the system's preference by default, or data-theme when set.
+ * light-dark() needs Chrome 123, Firefox 120 or Safari 17.5.
  */
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
 
   /* Type */
   --sans:
@@ -60,223 +61,111 @@
   --ease-out: cubic-bezier(0.16, 0.84, 0.44, 1);
 
   /* Surfaces and lines */
-  --bg: #faf7f3;
-  --surface: #fffdfa;
-  --surface-2: #f7f3ee;
-  --surface-3: #f0ece5;
-  --border: #e8e2da;
-  --border-strong: #8e8a83;
-  --grid-line: #f1ece6;
-  --grid-major: #e7e2dc;
-  --line: #cfc8bf;
-  --line-2: #b3aba1;
-  --line-3: #948c82;
-  --line-4: #6f6a63;
-  --line-5: #545049;
-  --track: #ece7e0;
+  --bg: light-dark(#faf7f3, #16151a);
+  --surface: light-dark(#fffdfa, #1d1c22);
+  --surface-2: light-dark(#f7f3ee, #25242b);
+  --surface-3: light-dark(#f0ece5, #2f2e36);
+  --border: light-dark(#e8e2da, #302f38);
+  --border-strong: light-dark(#8e8a83, #6a6878);
+  --grid-line: light-dark(#f1ece6, #1e1d23);
+  --grid-major: light-dark(#e7e2dc, #26252c);
+  --line: light-dark(#cfc8bf, #4a4855);
+  --line-2: light-dark(#b3aba1, #615f6e);
+  --line-3: light-dark(#948c82, #807d8c);
+  --line-4: light-dark(#6f6a63, #a29fae);
+  --line-5: light-dark(#545049, #c4c1cf);
+  --track: light-dark(#ece7e0, #2b2a32);
   /* Text */
-  --text: #1e242e;
-  --text-dim: #525862;
-  --text-faint: #646972;
-  --text-on-fill: #fff;
+  --text: light-dark(#1e242e, #eceaf2);
+  --text-dim: light-dark(#525862, #a8a5b4);
+  --text-faint: light-dark(#646972, #8d8a99);
+  --text-on-fill: light-dark(#fff, #16151a);
   /* Accent (interactive) */
-  --accent: #325cbd;
-  --accent-hover: #2a4fa5;
-  --accent-press: #23438c;
-  --accent-fg: #fff;
-  --accent-soft: #e3edff;
-  --accent-ink: #2d5277;
-  --accent-ring: #325cbd52;
+  --accent: light-dark(#325cbd, #6f9bf0);
+  --accent-hover: light-dark(#2a4fa5, #87acf5);
+  --accent-press: light-dark(#23438c, #5b86dc);
+  --accent-fg: light-dark(#fff, #16151a);
+  --accent-soft: light-dark(#e3edff, #1b2740);
+  --accent-ink: light-dark(#2d5277, #a9c6ff);
+  --accent-ring: light-dark(#325cbd52, #6f9bf061);
   /* State */
   /* text */
-  --ok: #187a3b;
-  --warn: #945500;
-  --danger: #c52b30;
+  --ok: light-dark(#187a3b, #4ac06e);
+  --warn: light-dark(#945500, #d79a2b);
+  --danger: light-dark(#c52b30, #f0656a);
   /* lines, fills, markers */
-  --ok-mark: #319751;
-  --warn-mark: #c57800;
-  --danger-mark: #d73337;
+  --ok-mark: light-dark(#319751, #3fae61);
+  --warn-mark: light-dark(#c57800, #c98a1c);
+  --danger-mark: light-dark(#d73337, #e2565c);
   /* backgrounds */
-  --ok-soft: #e6f4ea;
-  --warn-soft: #fbeedb;
-  --danger-soft: #fdeceb;
+  --ok-soft: light-dark(#e6f4ea, #16301f);
+  --warn-soft: light-dark(#fbeedb, #332616);
+  --danger-soft: light-dark(#fdeceb, #3a1d1f);
   /* Depth */
-  --shadow-sm: 0 1px 2px #3c322829;
-  --shadow-md: 0 1px 2px #3c32280d, 0 4px 10px #3c322812;
-  --shadow-lg: 0 2px 4px #3c32280d, 0 12px 28px #3c32281a;
-  --bevel: #ffffffe6;
-  --bevel-on-accent: #ffffff29;
-  --scrim: #3c322829;
+  --shadow-sm: 0 1px 2px light-dark(#3c322829, #0006);
+  --shadow-md:
+    0 1px 2px light-dark(#3c32280d, #0000005c), 0 4px 10px light-dark(#3c322812, #00000070);
+  --shadow-lg:
+    0 2px 4px light-dark(#3c32280d, #0000005c), 0 12px 28px light-dark(#3c32281a, #00000085);
+  --bevel: light-dark(#ffffffe6, #ffffff12);
+  --bevel-on-accent: light-dark(#ffffff29, #ffffff24);
+  --scrim: light-dark(#3c322829, #0000008f);
   /* Kinds: fill (background), line (edges, meters), stroke (outline), ink (text on fill) */
-  --kind-client-fill: #f2effe;
-  --kind-client-line: #b09de9;
-  --kind-client-stroke: #866fc2;
-  --kind-client-ink: #534775;
-  --kind-limiter-fill: #e9f5e9;
-  --kind-limiter-line: #7dbd7f;
-  --kind-limiter-stroke: #4b934f;
-  --kind-limiter-ink: #345b35;
-  --kind-backend-fill: #eaf2ff;
-  --kind-backend-line: #85abf0;
-  --kind-backend-stroke: #567fca;
-  --kind-backend-ink: #394f79;
-  --kind-queue-fill: #f5eefc;
-  --kind-queue-line: #c097df;
-  --kind-queue-stroke: #9769b8;
-  --kind-queue-ink: #5c446f;
-  --kind-retry-fill: #f8edfa;
-  --kind-retry-line: #cc93d4;
-  --kind-retry-stroke: #a365ac;
-  --kind-retry-ink: #634168;
-  --kind-store-fill: #e4f4fd;
-  --kind-store-line: #57b8e3;
-  --kind-store-stroke: #008cb9;
-  --kind-store-ink: #185771;
+  --kind-client-fill: light-dark(#f2effe, #261e3a);
+  --kind-client-line: light-dark(#b09de9, #7154b2);
+  --kind-client-stroke: light-dark(#866fc2, #ac8ff9);
+  --kind-client-ink: light-dark(#534775, #d4c7ff);
+  --kind-limiter-fill: light-dark(#e9f5e9, #122a14);
+  --kind-limiter-line: light-dark(#7dbd7f, #217d2d);
+  --kind-limiter-stroke: light-dark(#4b934f, #60bd66);
+  --kind-limiter-ink: light-dark(#345b35, #b0e0b0);
+  --kind-backend-fill: light-dark(#eaf2ff, #15243c);
+  --kind-backend-line: light-dark(#85abf0, #3865ba);
+  --kind-backend-stroke: light-dark(#567fca, #6ea3ff);
+  --kind-backend-ink: light-dark(#394f79, #b5d2ff);
+  --kind-queue-fill: light-dark(#f5eefc, #2b1d37);
+  --kind-queue-line: light-dark(#c097df, #824da6);
+  --kind-queue-stroke: light-dark(#9769b8, #c287ec);
+  --kind-queue-ink: light-dark(#5c446f, #e1c3fa);
+  --kind-retry-fill: light-dark(#f8edfa, #2f1b33);
+  --kind-retry-line: light-dark(#cc93d4, #8f4799);
+  --kind-retry-stroke: light-dark(#a365ac, #d182dc);
+  --kind-retry-ink: light-dark(#634168, #ebc0f1);
+  --kind-store-fill: light-dark(#e4f4fd, #022839);
+  --kind-store-line: light-dark(#57b8e3, #0075ab);
+  --kind-store-stroke: light-dark(#008cb9, #00b4ee);
+  --kind-store-ink: light-dark(#185771, #99dcfc);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-    --bg: #16151a;
-    --surface: #1d1c22;
-    --surface-2: #25242b;
-    --surface-3: #2f2e36;
-    --border: #302f38;
-    --border-strong: #6a6878;
-    --grid-line: #1e1d23;
-    --grid-major: #26252c;
-    --line: #4a4855;
-    --line-2: #615f6e;
-    --line-3: #807d8c;
-    --line-4: #a29fae;
-    --line-5: #c4c1cf;
-    --track: #2b2a32;
-    --text: #eceaf2;
-    --text-dim: #a8a5b4;
-    --text-faint: #8d8a99;
-    --text-on-fill: #16151a;
-    --accent: #6f9bf0;
-    --accent-hover: #87acf5;
-    --accent-press: #5b86dc;
-    --accent-fg: #16151a;
-    --accent-soft: #1b2740;
-    --accent-ink: #a9c6ff;
-    --accent-ring: #6f9bf061;
-    --ok: #4ac06e;
-    --warn: #d79a2b;
-    --danger: #f0656a;
-    --ok-mark: #3fae61;
-    --warn-mark: #c98a1c;
-    --danger-mark: #e2565c;
-    --ok-soft: #16301f;
-    --warn-soft: #332616;
-    --danger-soft: #3a1d1f;
-    --shadow-sm: 0 1px 2px #0006;
-    --shadow-md: 0 1px 2px #0000005c, 0 4px 10px #00000070;
-    --shadow-lg: 0 2px 4px #0000005c, 0 12px 28px #00000085;
-    --bevel: #ffffff12;
-    --bevel-on-accent: #ffffff24;
-    --scrim: #0000008f;
-    --kind-client-fill: #261e3a;
-    --kind-client-line: #7154b2;
-    --kind-client-stroke: #ac8ff9;
-    --kind-client-ink: #d4c7ff;
-    --kind-limiter-fill: #122a14;
-    --kind-limiter-line: #217d2d;
-    --kind-limiter-stroke: #60bd66;
-    --kind-limiter-ink: #b0e0b0;
-    --kind-backend-fill: #15243c;
-    --kind-backend-line: #3865ba;
-    --kind-backend-stroke: #6ea3ff;
-    --kind-backend-ink: #b5d2ff;
-    --kind-queue-fill: #2b1d37;
-    --kind-queue-line: #824da6;
-    --kind-queue-stroke: #c287ec;
-    --kind-queue-ink: #e1c3fa;
-    --kind-retry-fill: #2f1b33;
-    --kind-retry-line: #8f4799;
-    --kind-retry-stroke: #d182dc;
-    --kind-retry-ink: #ebc0f1;
-    --kind-store-fill: #022839;
-    --kind-store-line: #0075ab;
-    --kind-store-stroke: #00b4ee;
-    --kind-store-ink: #99dcfc;
-  }
+/* An explicit theme overrides the system's preference. */
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #16151a;
-  --surface: #1d1c22;
-  --surface-2: #25242b;
-  --surface-3: #2f2e36;
-  --border: #302f38;
-  --border-strong: #6a6878;
-  --grid-line: #1e1d23;
-  --grid-major: #26252c;
-  --line: #4a4855;
-  --line-2: #615f6e;
-  --line-3: #807d8c;
-  --line-4: #a29fae;
-  --line-5: #c4c1cf;
-  --track: #2b2a32;
-  --text: #eceaf2;
-  --text-dim: #a8a5b4;
-  --text-faint: #8d8a99;
-  --text-on-fill: #16151a;
-  --accent: #6f9bf0;
-  --accent-hover: #87acf5;
-  --accent-press: #5b86dc;
-  --accent-fg: #16151a;
-  --accent-soft: #1b2740;
-  --accent-ink: #a9c6ff;
-  --accent-ring: #6f9bf061;
-  --ok: #4ac06e;
-  --warn: #d79a2b;
-  --danger: #f0656a;
-  --ok-mark: #3fae61;
-  --warn-mark: #c98a1c;
-  --danger-mark: #e2565c;
-  --ok-soft: #16301f;
-  --warn-soft: #332616;
-  --danger-soft: #3a1d1f;
-  --shadow-sm: 0 1px 2px #0006;
-  --shadow-md: 0 1px 2px #0000005c, 0 4px 10px #00000070;
-  --shadow-lg: 0 2px 4px #0000005c, 0 12px 28px #00000085;
-  --bevel: #ffffff12;
-  --bevel-on-accent: #ffffff24;
-  --scrim: #0000008f;
-  --kind-client-fill: #261e3a;
-  --kind-client-line: #7154b2;
-  --kind-client-stroke: #ac8ff9;
-  --kind-client-ink: #d4c7ff;
-  --kind-limiter-fill: #122a14;
-  --kind-limiter-line: #217d2d;
-  --kind-limiter-stroke: #60bd66;
-  --kind-limiter-ink: #b0e0b0;
-  --kind-backend-fill: #15243c;
-  --kind-backend-line: #3865ba;
-  --kind-backend-stroke: #6ea3ff;
-  --kind-backend-ink: #b5d2ff;
-  --kind-queue-fill: #2b1d37;
-  --kind-queue-line: #824da6;
-  --kind-queue-stroke: #c287ec;
-  --kind-queue-ink: #e1c3fa;
-  --kind-retry-fill: #2f1b33;
-  --kind-retry-line: #8f4799;
-  --kind-retry-stroke: #d182dc;
-  --kind-retry-ink: #ebc0f1;
-  --kind-store-fill: #022839;
-  --kind-store-line: #0075ab;
-  --kind-store-stroke: #00b4ee;
-  --kind-store-ink: #99dcfc;
 }
 
-/* Base styles (DESIGN.md). The graph paper comes with the panels (RS-17). */
+/* Base styles (DESIGN.md). */
 body {
   margin: 0;
   color: var(--text);
-  background: var(--bg);
+  /*
+   * Graph paper: a 16px grid with every fifth line darker. Fixed, so it never scrolls separately
+   * from the page.
+   */
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size:
+    80px 80px,
+    80px 80px,
+    16px 16px,
+    16px 16px;
+  background-attachment: fixed;
   font-family: var(--sans);
   font-size: var(--fs-base);
   font-weight: var(--fw-body);

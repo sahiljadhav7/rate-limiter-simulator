@@ -118,7 +118,7 @@ Put these in `src/ui/tokens.css`. Light is the default; dark applies under the s
 }
 ```
 
-The dark block is written once and applied twice: to `[data-theme="dark"]`, and inside the media query to `:root:not([data-theme="light"])`. Generate both from one source (a CSS mixin or a small build step) so they cannot drift.
+The two blocks above are the source of truth for each theme's values. In `src/ui/tokens.css` each colour is written once as `light-dark(<light>, <dark>)` (shadows per layer colour), so the themes cannot drift; `tests/tokens.test.ts` checks both against these blocks. `:root` sets `color-scheme: light dark`, which follows the system, and `[data-theme="light"]` or `[data-theme="dark"]` sets `color-scheme` to force one. `light-dark()` needs Chrome 123, Firefox 120 or Safari 17.5.
 
 **Kind mapping.** Client is violet, Limiter is green, Backend is blue, the leaky bucket's queue is purple, retries are pink-violet, and the distributed scenario's shared counter store is cyan. A kind's colour is the same wherever it appears: its pipeline node, its meter fill and its chart series.
 

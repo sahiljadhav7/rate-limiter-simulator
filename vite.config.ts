@@ -7,5 +7,7 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    // tests/tokens.test.ts reads tokens.css as text; Vitest blanks CSS it does not include.
+    css: { include: [/tokens\.css/] },
   },
 })
