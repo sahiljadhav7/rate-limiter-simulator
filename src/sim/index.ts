@@ -55,3 +55,16 @@ export {
   type TrafficSource,
   type TrafficSourceOptions,
 } from './traffic-source.ts'
+export {
+  createDiagnoser,
+  HYSTERESIS_FRACTION,
+  LOSS_WINDOW_SNAPSHOTS,
+  QUEUE_OVERFLOW_BROKEN_SHARE,
+  QUEUE_OVERFLOW_WARN_SHARE,
+  type Diagnoser,
+  type DiagnoserOptions,
+  type FailureMode,
+  type Finding,
+  type Fix,
+  type Severity,
+} from './diagnosis.ts'

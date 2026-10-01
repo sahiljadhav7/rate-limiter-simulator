@@ -181,7 +181,7 @@ interface Fix {
 | Limit too loose | Cause | limiter rejects ~0 but backend is saturated | Limit is above what the backend can serve, so the limiter protects nothing | Set limit <= backend capacity x safety factor |
 | Limit too tight | Cause | backend utilization < 40% while rejection rate > 30% | Legitimate traffic is rejected while capacity sits idle | Raise the limit, add burst allowance |
 | Backend saturation | Symptom | utilization >= 95% and p99 > 3x baseline p99 | Arrival rate is near or above capacity, so the queue grows and latency explodes | Lower the limit, add slots, add a cache |
-| Queue overflow / load shedding | Symptom | backend shed count > 0 | Queue hit its limit, so Attempts are shed | Smaller limiter limit, bigger queue (with latency warning), autoscale |
+| Queue overflow / load shedding | Symptom | over the last 5 s, Attempts shed or timed out are >= 1% of those sent to the Backend (`warn`), >= 5% (`broken`); left below half of each (built early, 2026-10-01: `src/sim/diagnosis.ts`) | Queue hit its limit, so Attempts are shed | Smaller limiter limit, bigger queue (with latency warning), autoscale |
 | Goodput collapse | Symptom | Goodput < 50% of its own peak while backend utilization stays high | Backend is busy on Wasted Work: Attempts callers already abandoned | Shorter queue, timeouts and cancellation, shed earlier |
 
 ### Ranking and behavior
@@ -485,7 +485,8 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
 - **RS-25 Diagnosis tests [Day 3]** (1.5h): one triggering and one healthy fixture per core rule, in `tests/`. *Depends on RS-24.*
 - **RS-26 Diagnosis UI card + chart markers [Day 3]** (1.5h): label, severity, evidence, why, ranked fixes; vertical marker at `startedAt`. *Depends on RS-16, RS-17, RS-24.*
 - **RS-27 "Apply fix and re-run" [Stretch]** (1.5h): applies a `patch` to create a new Variant and starts it from t=0 beside the original on the same seeded traffic. *Depends on RS-15, RS-26.*
-- **RS-28 Remaining diagnosis rules [Stretch]** (2h): queue overflow, limit too loose, limit too tight, distributed over-admit, goodput collapse, each with fixtures. *Depends on RS-24, RS-25.*
+- **RS-28 Remaining diagnosis rules [Stretch]** (2h): limit too loose, limit too tight, distributed over-admit, goodput collapse, each with fixtures. *Depends on RS-24, RS-25.*
+  - *Note (2026-10-01):* queue overflow was built early, with the Backend overload Scenario (`.scratch/backend-overload/`). "Shed count > 0" fired on a healthy fixed window at its calm default (9 shed in 2 minutes), so the rule is a share with thresholds instead.
 
 ---
 
