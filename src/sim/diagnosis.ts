@@ -6,6 +6,7 @@
  * find: one Root Cause, every other Finding Contributing.
  */
 import type { BackendSpec } from './backend.ts'
+import { baselineP99Ms } from './baseline.ts'
 import type { AllowedSubBuckets } from './engine.ts'
 import type { LimiterSpec } from './limiter.ts'
 import type { Snapshot } from './metrics.ts'
@@ -106,6 +107,43 @@ export const QUEUE_OVERFLOW_BROKEN_SHARE = 0.05
  * threshold does not flicker between states.
  */
 export const QUEUE_OVERFLOW_HYSTERESIS_FRACTION = 0.5
+
+/**
+ * The mean share of Backend slot time busy over the window at which saturation becomes
+ * `broken` (BaseConcept): at 95% there is almost no slack left for a burst. Measured on the
+ * saturation fixture (4 slots of 50 ms, ceiling 80/s, Poisson Demand, seeds 1 to 8, 120 s,
+ * .scratch/diagnosis/saturation-probe.ts): no 5 s window at 40/s gets above 65% busy.
+ */
+export const SATURATION_BROKEN_BUSY = 0.95
+
+/**
+ * How many times the baseline p99 the newest p99 must be, with the Backend that busy, for
+ * `broken` (BaseConcept): Attempts spend twice as long waiting for a slot as being served.
+ * Busy alone is not enough; a Backend at full use that still answers quickly is doing its
+ * job. On the fixture at 40/s the p99 never passes 1.8x the baseline.
+ */
+export const SATURATION_BROKEN_RATIO = 3
+
+/** The busy share for `warn`: 85%, where waiting for a slot starts to show in the p99. */
+export const SATURATION_WARN_BUSY = 0.85
+
+/** The p99 ratio for `warn`: the slowest Attempts take twice what the work alone takes. */
+export const SATURATION_WARN_RATIO = 2
+
+/**
+ * Saturation leaves a severity only once the busy share falls this far below the threshold
+ * that entered it (broken below 90%, warn below 80%). Half the threshold, as queue overflow
+ * uses, would hold a Backend at 50% busy in `broken`. On the fixture at 80/s, its ceiling,
+ * 5 s windows range from 79% to 100% busy.
+ */
+export const SATURATION_BUSY_MARGIN = 0.05
+
+/**
+ * Saturation leaves a severity only once the p99 ratio falls this far below the one that
+ * entered it (broken at 2.5x or less, warn at 1.5x or less). At 100/s on the fixture the p99
+ * ranges from 2.2x to 4.1x the baseline from one 5 s window to the next.
+ */
+export const SATURATION_RATIO_MARGIN = 0.5
 
 /**
  * What a rule detects in one full window: the parts of a Finding that come from its numbers.
@@ -218,9 +256,83 @@ export function queueOverflowRule({ queueLimit }: BackendSpec): Rule {
   }
 }
 
+/**
+ * The saturation rule: the Backend busy nearly all the time over the window, with the newest
+ * p99 far above what its service times alone would give, so Attempts are waiting for a slot.
+ */
+export function saturationRule(backend: BackendSpec): Rule {
+  const baseline = baselineP99Ms(backend)
+  let severity: Severity | null = null
+
+  /** Whether `busy` and `ratio` reach a severity entered at `minBusy` and `minRatio`. */
+  function reaches(
+    busy: number,
+    ratio: number,
+    minBusy: number,
+    minRatio: number,
+    alreadyIn: boolean,
+  ): boolean {
+    if (!alreadyIn) return busy >= minBusy && ratio > minRatio
+    return busy >= minBusy - SATURATION_BUSY_MARGIN && ratio > minRatio - SATURATION_RATIO_MARGIN
+  }
+
+  return {
+    id: 'saturation',
+    judge(window) {
+      const busy = window.reduce((t, s) => t + s.backendUtil, 0) / window.length
+      // The newest p99 already covers the last 5 s of completed Attempts.
+      const p99 = window.at(-1)?.p99 ?? null
+      if (p99 === null) {
+        severity = null
+        return null
+      }
+      const ratio = p99 / baseline
+      if (
+        reaches(busy, ratio, SATURATION_BROKEN_BUSY, SATURATION_BROKEN_RATIO, severity === 'broken')
+      ) {
+        severity = 'broken'
+      } else if (
+        reaches(busy, ratio, SATURATION_WARN_BUSY, SATURATION_WARN_RATIO, severity !== null)
+      ) {
+        severity = 'warn'
+      } else {
+        severity = null
+      }
+      if (severity === null) return null
+      const ms = (value: number) => `${Math.round(value)} ms`
+      return {
+        severity,
+        evidence: [
+          { metric: 'Busy', value: percent(busy) },
+          { metric: 'p99 latency', value: ms(p99) },
+          { metric: 'Baseline p99', value: ms(baseline) },
+          { metric: 'p99 / baseline', value: `${ratio.toFixed(1)}x` },
+        ],
+        why:
+          `The Backend was busy ${percent(busy)} of the time, so Attempts waited for a slot: ` +
+          `the slowest 1 in 100 took ${ms(p99)}, ${ratio.toFixed(1)}x the ${ms(baseline)} its ` +
+          `work alone takes.`,
+        fixes: [
+          // Ranked by what each did on the saturation fixture at 100/s, 1.25x its ceiling, seeds
+          // 1 to 8 (.scratch/diagnosis/saturation-fixes.ts): 8 slots, never saturated and Goodput
+          // 99 to 101/s; half the service time, the same Goodput with p99 down to 122 to 139 ms;
+          // a token bucket at 70/s, saturation gone (warn at most 7% of seconds) but Goodput held
+          // at 70/s; as is, broken 95% to 100% of seconds at 78 to 81/s. The simulator has no
+          // cache, so "cheaper" is measured as a shorter service time.
+          { text: 'Try more Backend slots' },
+          { text: 'Try making each Attempt cheaper for the Backend, such as with a cache' },
+          {
+            text: 'Try a limit below what the Backend can serve (it turns more away, but what gets through is quick)',
+          },
+        ],
+      }
+    },
+  }
+}
+
 /** The rules every Variant is diagnosed with. */
 export function defaultRules({ backend }: DiagnoserOptions): Rule[] {
-  return [queueOverflowRule(backend)]
+  return [saturationRule(backend), queueOverflowRule(backend)]
 }
 
 /** Orders active Findings and sets their roles (D6, BaseConcept.md "Ranking and behavior"). */

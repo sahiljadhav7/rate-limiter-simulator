@@ -3,26 +3,33 @@ import { createRunner } from '../src/runner/runner.ts'
 import type { Scenario } from '../src/runner/scenario.ts'
 import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
 import { edgeBurstScenario } from '../src/ui/scenarios/edge-burst.ts'
+import { withRetryMode, type RetryMode } from '../src/ui/controls/retry-options.ts'
 
 /** Run length for each row: long enough for many window edges and a settled 5 s loss share. */
 const RUN_MS = 120_000
 
 /**
- * Runs `scenario` at `demandRps` for RUN_MS and gives each Variant's worst Finding at any
- * second, and its Root Cause then: what a student would have seen go red.
+ * Runs `scenario` at `demandRps` for RUN_MS, with every Variant on the Retry Policy `retry` if
+ * given, and gives each Variant's worst Finding at any second, every Failure Mode it showed,
+ * and its Root Cause then: what a student would have seen go red.
  */
-function worstFindings(scenario: Scenario, demandRps: number) {
+function worstFindings(scenario: Scenario, demandRps: number, retry?: RetryMode) {
+  const variants = scenario.variants.map((variant) =>
+    retry === undefined ? variant : { ...variant, retry: withRetryMode(variant.retry, retry) },
+  )
   const runner = createRunner(
-    { ...scenario, traffic: { ...scenario.traffic, demandRps } },
+    { ...scenario, variants, traffic: { ...scenario.traffic, demandRps } },
     { eventBudget: Infinity },
   )
   const worst = scenario.variants.map(() => 'none' as 'none' | 'warn' | 'broken')
+  const modes = scenario.variants.map(() => new Set<string>())
   const rootCauses = scenario.variants.map(() => new Set<string>())
   while (runner.view().simMs < RUN_MS) {
     runner.tick(100)
     runner.view().variants.forEach(({ findings }, i) => {
       for (const finding of findings) {
         if (finding.severity === 'broken' || worst[i] === 'none') worst[i] = finding.severity
+        modes[i]?.add(finding.id)
         if (finding.role === 'root-cause') rootCauses[i]?.add(finding.id)
       }
     })
@@ -30,9 +37,15 @@ function worstFindings(scenario: Scenario, demandRps: number) {
   return scenario.variants.map((variant, i) => ({
     label: variant.label,
     worst: worst[i],
+    modes: [...(modes[i] ?? [])].sort(),
     rootCauses: [...(rootCauses[i] ?? [])],
   }))
 }
+
+const SCENARIOS = [
+  ['Backend overload', backendOverloadScenario, 10],
+  ['Edge burst', edgeBurstScenario, 4],
+] as const
 
 /**
  * The Scenario Findings table (CLAUDE.md "Adding a scenario", "Adding a diagnosis rule"): for
@@ -84,5 +97,20 @@ describe('Scenario Findings table', () => {
 
   it('Edge burst at its default 4/s: the Backend copes with every burst, no Finding', () => {
     expect(worstFindings(edgeBurstScenario, 4).map((row) => row.worst)).toEqual(['none', 'none'])
+  })
+
+  // Saturation needs the Backend busy 85% of a 5 s window or more; bursty traffic in both
+  // Scenarios keeps it under 26% (.scratch/review/rule-probe.ts), so it never fires here.
+  describe.each(SCENARIOS)('%s', (_, scenario, defaultRps) => {
+    it.each([
+      [defaultRps, undefined],
+      [defaultRps * 3, undefined],
+      [defaultRps * 3, 'immediate'],
+      [defaultRps * 3, 'backoff-jitter'],
+    ] as const)('at %s/s with Retry Policy %s: no saturation', (demandRps, retry) => {
+      for (const row of worstFindings(scenario, demandRps, retry)) {
+        expect(row.modes).not.toContain('saturation')
+      }
+    })
   })
 })
