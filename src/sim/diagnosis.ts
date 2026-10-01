@@ -47,16 +47,18 @@ export const LOSS_WINDOW_SNAPSHOTS = 5
 
 /**
  * The share of Attempts sent to the Backend that it lost (shed because the queue was full, or
- * timed out) at which queue overflow becomes `warn`. Measured in the Backend overload Scenario:
- * a Limiter that spreads Attempts evenly loses about 0.05%, and fixed window 0.1% at its calm
- * default, so 1% is well clear of normal noise.
+ * timed out) at which queue overflow becomes `warn`. Measured over seeds 1 to 8 and 120 s
+ * (.scratch/review/loss.ts): a healthy Backend loses nothing in either Scenario (token bucket
+ * 0.00% in Backend overload at 10 to 40/s; both Limiters 0.00% in Edge burst at 4 and 8/s), and
+ * the sliding window counter starting to struggle at 20/s loses 0.25% to 2.7% overall. So 1% is
+ * well clear of noise and catches the first real losses.
  */
 export const QUEUE_OVERFLOW_WARN_SHARE = 0.01
 
 /**
- * The loss share at which queue overflow becomes `broken`: one Attempt in twenty lost. Fixed
- * window loses 6.6% at twice the Backend overload Scenario's default Demand and 24% at three
- * times, while sliding window counter and token bucket stay near 0.05%.
+ * The loss share at which queue overflow becomes `broken`: one Attempt in twenty lost. In
+ * Backend overload the sliding window counter loses 16% to 20% at 30/s and 29% to 31% at 40/s
+ * (seeds 1 to 8, 120 s), well past it, while at 20/s only its worst 5 s windows reach it.
  */
 export const QUEUE_OVERFLOW_BROKEN_SHARE = 0.05
 
@@ -138,11 +140,16 @@ export function createDiagnoser({ queueLimit }: DiagnoserOptions): Diagnoser {
           `The queue of ${queueLimit} filled, so ${shed} Attempts were shed and ${timedOut} ` +
           `timed out: ${percent(share)} of what the Limiter let through.`,
         fixes: [
+          // Ranked by what each did for the sliding window counter in Backend overload at 30/s,
+          // seeds 1 to 8 (.scratch/review/fixes.ts): token bucket of 10, 0% lost and Goodput 15.7/s;
+          // 8 slots, 0.1% and 14.0/s; a queue of 60, up to 3.5% and 13.7/s; as is, 11.5/s. A lower
+          // limit stops the loss but turns so much away that Goodput falls (7.9/s at 40), so it
+          // is not suggested.
           {
-            text: 'Try a Limiter that spreads Attempts evenly (sliding window counter or token bucket)',
+            text: 'Try a Limiter that lets Attempts through at a steady pace instead of a whole window at once, such as a token bucket with a small capacity',
           },
-          { text: 'Try a bigger queue (Attempts wait longer)' },
           { text: 'Try more Backend slots' },
+          { text: 'Try a bigger queue (Attempts wait longer)' },
         ],
         role: 'root-cause',
       }
