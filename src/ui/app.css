@@ -63,15 +63,21 @@
 
 .top-bar-name {
   display: grid;
+  gap: var(--sp-1);
 }
 
 .app-name {
   font-weight: var(--fw-num);
 }
 
-.scenario-title {
-  font-size: var(--fs-sm);
-  color: var(--text-dim);
+/* Text for screen readers only, such as a label the layout already makes plain. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Stacked below 1024px; one equal column per Variant from there (see .panel in panel.css). */
