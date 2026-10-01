@@ -23,6 +23,7 @@ export function App() {
                 variant={variant}
                 config={config}
                 backend={edgeBurstScenario.backend}
+                clients={edgeBurstScenario.traffic.clients.length}
                 nowMs={view.simMs}
               />
             </section>

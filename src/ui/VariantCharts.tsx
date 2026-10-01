@@ -1,9 +1,10 @@
 import { memo } from 'react'
 import type { VariantView } from '../runner/runner.ts'
 import type { VariantConfig } from '../runner/scenario.ts'
-import { allowedPerSecond, limiterWindow, type BackendSpec, type Snapshot } from '../sim/index.ts'
+import { limiterWindow, type BackendSpec, type Snapshot } from '../sim/index.ts'
 import { rollingWindowCounts, timeDomain, visibleSnapshots, type Point } from './chart/geometry.ts'
 import { TimeSeriesChart } from './chart/TimeSeriesChart.tsx'
+import { limiterCapacity } from './panel/stats.ts'
 
 /** One value of every visible Snapshot, at the end of the second it covers. */
 function pointsOf(snapshots: readonly Snapshot[], pick: (s: Snapshot) => number | null): Point[] {
@@ -15,6 +16,8 @@ export interface VariantChartsProps {
   readonly variant: VariantView
   readonly config: VariantConfig
   readonly backend: BackendSpec
+  /** How many Clients the Scenario has: a per-client Limiter allows its rate to each. */
+  readonly clients: number
   /** The current simulated time, in ms. */
   readonly nowMs: number
 }
@@ -27,6 +30,7 @@ export const VariantCharts = memo(function VariantCharts({
   variant,
   config,
   backend,
+  clients,
   nowMs,
 }: VariantChartsProps) {
   const snapshots = visibleSnapshots(variant.snapshots, nowMs)
@@ -80,7 +84,7 @@ export const VariantCharts = memo(function VariantCharts({
             points: pointsOf(snapshots, (s) => s.delayed),
           },
         ]}
-        referenceLines={[{ value: allowedPerSecond(config.limiter), label: 'limit' }]}
+        referenceLines={[{ value: limiterCapacity(config.limiter, clients), label: 'limit' }]}
       />
       <TimeSeriesChart
         title="How long Attempts took (milliseconds, last 5 seconds)"
