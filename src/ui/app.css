@@ -37,3 +37,35 @@
     row-gap: var(--sp-4);
   }
 }
+
+/*
+ * Ledger (DESIGN.md "Ledger"): one status line at the bottom-left, kept in view while the page
+ * scrolls. Its text is upper case already, apart from the s of seconds.
+ */
+.ledger {
+  position: sticky;
+  bottom: var(--sp-3);
+  justify-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--sp-3);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--surface);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--r-btn);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-label);
+  letter-spacing: var(--tr-label);
+  line-height: var(--lh-sm);
+  color: var(--text-faint);
+}
+
+.ledger-notice {
+  font-weight: var(--fw-num);
+  color: var(--warn);
+}
+
+.ledger-notice:empty {
+  display: none;
+}

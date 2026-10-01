@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createRunner, type Runner, type RunnerView } from '../runner/runner.ts'
 import type { Scenario } from '../runner/scenario.ts'
 import { createFrameClock } from './frame-clock.ts'
+import { createSlowdownHold } from './ledger.ts'
 
 /**
  * Runs `scenario` in the browser: one runner for the component's lifetime, ticked every
@@ -11,26 +12,33 @@ import { createFrameClock } from './frame-clock.ts'
  *
  * The Scenario is read once; a new Scenario needs a new component (a `key`). The runner is
  * made once by a lazy `useState`, which keeps it for the component's lifetime as a ref would,
- * and is returned for the controls (RS-18) to call.
+ * and is returned for the controls (RS-18) to call. `slower` says whether to show the ledger's
+ * RUNNING SLOWER THAN REQUESTED, from every frame rather than only the published ones.
  */
 export function useRunner(scenario: Scenario): {
   readonly view: RunnerView
   readonly runner: Runner
+  readonly slower: boolean
 } {
   const [runner] = useState(() => createRunner(scenario))
   const [view, setView] = useState(() => runner.view())
+  const [slower, setSlower] = useState(false)
 
   useEffect(() => {
     // A handle for checking the app from the browser console or a test script; dev builds only.
     if (import.meta.env.DEV) Object.assign(window, { ratescale: runner })
     const clock = createFrameClock()
+    const hold = createSlowdownHold()
     // A background tab gets no frames at all, so the first frame back would see the whole
     // hidden time; restarting on every visibility change makes that frame count 0 instead.
     const restart = () => clock.restart()
     document.addEventListener('visibilitychange', restart)
     let frame = requestAnimationFrame(function onFrame(nowMs) {
-      runner.tick(clock.step(nowMs, document.visibilityState === 'visible'))
-      if (clock.shouldPublish(nowMs)) setView(runner.view())
+      hold.frame(nowMs, runner.tick(clock.step(nowMs, document.visibilityState === 'visible')))
+      if (clock.shouldPublish(nowMs)) {
+        setView(runner.view())
+        setSlower(hold.showing(nowMs))
+      }
       frame = requestAnimationFrame(onFrame)
     })
     return () => {
@@ -39,5 +47,5 @@ export function useRunner(scenario: Scenario): {
     }
   }, [runner])
 
-  return { view, runner }
+  return { view, runner, slower }
 }

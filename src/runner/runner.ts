@@ -92,9 +92,11 @@ export interface Runner {
    * Advances every Variant by `wallMs` x speed of simulated time, with `wallMs` capped at
    * FRAME_CAP_MS, in sub-steps of SUB_STEP_MS. Ends early, between sub-steps, once the frame
    * has handled the event budget, and then `view().behind` is true until a frame fits. Does
-   * nothing while paused. Throws a RangeError unless `wallMs` is a finite number, 0 or more.
+   * nothing while paused. Returns whether this frame hit the budget, so a caller that reads the
+   * view less often than every frame still sees every slow frame. Throws a RangeError unless
+   * `wallMs` is a finite number, 0 or more.
    */
-  tick(wallMs: number): void
+  tick(wallMs: number): boolean
   /** Stops simulated time until `resume`; controls still apply, at the paused time. */
   pause(): void
   resume(): void
@@ -175,7 +177,7 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
   return {
     tick(wallMs) {
       checkNonNegative(wallMs, "A frame's wall time in ms")
-      if (paused) return
+      if (paused) return false
       const targetMs = simMs + Math.min(wallMs, FRAME_CAP_MS) * speed
       const stopAt = eventsHandled() + eventBudget
       behind = false
@@ -187,6 +189,7 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
         }
       }
       run.source.trim()
+      return behind
     },
     pause() {
       paused = true

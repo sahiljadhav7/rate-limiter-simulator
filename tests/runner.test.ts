@@ -351,6 +351,16 @@ describe('the event budget', () => {
     expect(runner.view().behind).toBe(false)
   })
 
+  it('returns from each tick whether that frame hit the budget, so no frame goes unseen', () => {
+    const runner = createRunner(scenario, { eventBudget: allTogether / 4 })
+    runner.setSpeed(10)
+    expect(runner.tick(100)).toBe(true)
+    runner.setSpeed(1)
+    expect(runner.tick(16)).toBe(false)
+    runner.pause()
+    expect(runner.tick(16)).toBe(false)
+  })
+
   it('counts the events of every Variant together', () => {
     // Above what any one Variant handles in the second, below what all three handle.
     const budget = (Math.max(...firstSecond) + allTogether) / 2

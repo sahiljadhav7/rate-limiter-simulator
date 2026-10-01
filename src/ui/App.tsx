@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { edgeBurstScenario } from './edge-burst-scenario.ts'
+import { ledgerLine, SLOWER_NOTICE } from './ledger.ts'
 import { VariantPanel } from './panel/VariantPanel.tsx'
 import { useRunner } from './use-runner.ts'
 import './app.css'
@@ -8,7 +9,7 @@ import './app.css'
 const scenario = edgeBurstScenario
 
 export function App() {
-  const { view } = useRunner(scenario)
+  const { view, slower } = useRunner(scenario)
   return (
     <div className="page">
       <header className="top-bar">
@@ -34,6 +35,21 @@ export function App() {
           ) : null
         })}
       </main>
+      <footer className="ledger">
+        <span data-testid="ledger-line">
+          {ledgerLine({
+            variants: scenario.variants.length,
+            seed: scenario.seed,
+            simMs: view.simMs,
+            speed: view.speed,
+            eventsHandled: view.eventsHandled,
+          })}
+        </span>
+        {/* Always present, so a screen reader announces the notice when it appears. */}
+        <span className="ledger-notice" role="status">
+          {slower ? SLOWER_NOTICE : null}
+        </span>
+      </footer>
     </div>
   )
 }
