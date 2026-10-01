@@ -97,11 +97,14 @@ describe('unitExponential', () => {
   it('has mean 1 over a million draws and is always finite', () => {
     const stream = createRandomStream(20260930)
     let sum = 0
+    let nonFinite = 0
+    // One expect per draw costs seconds; count failures and assert once.
     for (let i = 0; i < 1_000_000; i++) {
       const value = unitExponential(stream)
-      expect(Number.isFinite(value)).toBe(true)
+      if (!Number.isFinite(value)) nonFinite++
       sum += value
     }
+    expect(nonFinite).toBe(0)
     expect(Math.abs(sum / 1_000_000 - 1)).toBeLessThan(0.005)
   })
 })
