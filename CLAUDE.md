@@ -63,7 +63,7 @@ Step 5 is the real bar. An algorithm that matches an existing one on every scena
 ## Adding a scenario
 
 - One lesson each, and the explainer says what to watch
-- The lesson is visible at default settings, in the Variant it is about
+- The lesson is visible at default settings, or after one intentional slider adjustment, in the Variant it is about. A calm start that breaks when the student raises Demand keeps the simulation interactive
 - Stable at the default Demand, and degrades visibly at 2 to 4x
 - A "what this models and what it leaves out" note
 - A row in the diagnosis table test listing the Findings it produces and which is the Root Cause

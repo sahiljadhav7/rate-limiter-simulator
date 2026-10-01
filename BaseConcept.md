@@ -29,8 +29,10 @@ A teaching tool, not a production limiter. Nothing real is sent over a network. 
 
 **60-second demo (three things to show):**
 1. **Boundary burst** (about 15 s): fixed window vs sliding window on the same Edge Burst traffic (bursts timed to straddle the window reset); the fixed-window Variant admits about 2x the limit within one window-length, the sliding-window Variant does not.
-2. **Retry storm** (about 20 s): immediate retry vs backoff with jitter; Offered Load balloons and Goodput collapses in one Variant only.
+2. **Backend overload** (about 20 s): sliding window counter vs token bucket, both 70/s in front of a Backend that serves 80/s, on bursty traffic; raise Demand and the sliding window counter's Backend turns red and shakes as it sheds Attempts, while the token bucket's stays healthy.
 3. **Diagnosis card** (about 25 s): the app names the failure, shows the evidence numbers, and one click re-runs with the fix. *(Needs the day-3 tickets RS-26 and RS-27. Until then the demo is items 1 and 2 plus dragging the rate slider.)*
+
+The retry storm was demo item 2 until 2026-10-01; it is deferred to stretch (2026-10-01): measured in RS-12, immediate retry against backoff with jitter does not give "Goodput collapses in one Variant only". Once a Backend's full queue waits longer than the timeout, both Variants stay collapsed after the overload ends, and only no retry (or fewer Attempts, or a shorter queue) recovers. The current model does not reliably show the intended lesson, so it is not shipped as if ready; redesign its Variants from `tests/retry-storm.test.ts` first.
 
 ## Concepts to cover
 
@@ -43,11 +45,12 @@ A teaching tool, not a production limiter. Nothing real is sent over a network. 
 
 ### Scenarios (each isolates one lesson)
 1. **Boundary burst**: fixed window vs sliding window under Edge Burst traffic *(core)*
-2. **Retry storm**: immediate retry vs exponential backoff with jitter *(core)*
+2. **Backend overload**: sliding window counter vs token bucket, the same long-run rate, on bursty traffic; one lets a whole window through at the start of each burst and the Backend sheds *(core; `src/ui/scenarios/backend-overload.ts`)*
 3. **Noisy neighbor**: global limit vs per-client limit; one client starves everyone else
 4. **Burst tolerance**: token bucket vs leaky bucket under spiky traffic
 5. **Distributed limiter**: N nodes with local counters vs a shared counter; effective limit becomes N x limit
 6. **Rate limiting vs load shedding**: limiter on/off in front of an overloaded backend, comparing goodput and p99
+7. **Retry storm**: immediate retry vs exponential backoff with jitter *(stretch, RS-19c: deferred on 2026-10-01 because the current model does not reliably show its intended lesson; see RS-19c)*
 
 ## Tech stack
 
@@ -467,11 +470,12 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
 - **RS-18b Load presets and guardrails [Stretch]** (1h): ramp, spike, step presets; greedy-client multiplier; traffic shape selector; speed selector; rate cap warning above about 1,000 rps per Variant.
 
 ## Epic 4: Scenarios and content
-- **RS-19a Two core scenarios [Core]** (1.5h): boundary burst (with scripted Edge Burst arrivals timed to the window edge, D12) and retry storm.
-  - *AC:* each shows its intended lesson clearly at default settings.
-  - *Note (2026-10-01):* measured in RS-12, immediate retry vs backoff + jitter does not make "Goodput collapse in one Variant only": once a Backend's full queue waits longer than the timeout, both stay collapsed after the overload ends, and only no retry (or fewer Attempts, or a shorter queue) recovers. Redesign the retry-storm Variants from `tests/retry-storm.test.ts` before building it.
+- **RS-19a Two core scenarios [Core]** (1.5h): boundary burst (with scripted Edge Burst arrivals timed to the window edge, D12) and Backend overload (`.scratch/backend-overload/`). Both built.
+  - *AC:* each shows its intended lesson clearly at default settings or after one intentional slider adjustment (CLAUDE.md "Adding a scenario").
+  - *Note (2026-10-01):* Backend overload replaced the retry storm as the second core Scenario. The retry storm is deferred to stretch as RS-19c, with the reason written there.
 - **RS-20a Short explainer [Core]** (0.5h): a "what you're seeing and why" note and a "what this models / leaves out" note for the two core scenarios.
 - **RS-19b Remaining four scenarios [Stretch]** (1.5h): noisy neighbor, burst tolerance, distributed limiter, limiting vs load shedding.
+- **RS-19c Retry storm [Stretch]** (1h): deferred to stretch (2026-10-01): measured in RS-12, immediate retry against backoff with jitter does not give "Goodput collapses in one Variant only". Once a Backend's full queue waits longer than the timeout, both Variants stay collapsed after the overload ends, and only no retry (or fewer Attempts, or a shorter queue) recovers. The current model does not reliably show the intended lesson, so it is not shipped as if ready; redesign its Variants from `tests/retry-storm.test.ts` first.
 - **RS-20b Full explainers + glossary [Stretch]** (1h): notes for all scenarios and a plain-language definition for every metric (from the Metrics glossary above).
 
 ## Epic 5: Ship
@@ -497,7 +501,7 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
 | Day 1 | ~11.5 | RS-1 to RS-7 (sim core + fixed window), plus the first slice of RS-16 as a raw-chart smoke test |
 | Day 2 | ~12.25 | RS-8, RS-11, RS-12, RS-14, RS-15, rest of RS-16, RS-17, RS-18, RS-19a, RS-20a, RS-21, RS-29 |
 | Day 3 | ~8 | RS-23 to RS-26 (core diagnosis), RS-14b, RS-22 |
-| Stretch | ~11.5 | RS-9, RS-10, RS-13, RS-17b, RS-18b, RS-19b, RS-20b, RS-27, RS-28 |
+| Stretch | ~12.5 | RS-9, RS-10, RS-13, RS-17b, RS-18b, RS-19b, RS-19c, RS-20b, RS-27, RS-28 |
 
 Days 1 and 2 are long (11.5 to 12.25 hours each). If that is not realistic, expect the core to spill into a third day and diagnosis to move to a fourth.
 
@@ -506,7 +510,7 @@ Days 1 and 2 are long (11.5 to 12.25 hours each). If that is not realistic, expe
 **If day 2 runs over:**
 1. Shrink RS-20a to one sentence per scenario inside the scenario config
 2. Trim RS-12 to none, immediate and backoff + jitter
-3. Ship one scenario (retry storm) instead of two
+3. Ship one scenario (boundary burst) instead of two
 4. Run tests locally and skip RS-29 until later
 
 **If you want diagnosis in the first deploy:** drop RS-8 (token bucket, -1h) and ship one scenario (-0.5h). That still leaves the core about 2 hours short of fitting diagnosis, so expect day 3 regardless.
