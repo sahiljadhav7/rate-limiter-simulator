@@ -9,7 +9,7 @@ const COPIED_MS = 2000
  * setup. Without a clipboard (an insecure page, or permission denied) it shows the link in a
  * read-only field, selected, so the student can copy it themselves.
  */
-export function ShareButton(props: { readonly url: () => string }) {
+export function ShareButton(props: { readonly url: string }) {
   const { url } = props
   const fieldId = useId()
   /** How many times the link has been copied; each copy restarts the 2 s of "Link copied". */
@@ -32,7 +32,7 @@ export function ShareButton(props: { readonly url: () => string }) {
   }, [manual])
 
   async function share() {
-    const link = url()
+    const link = url
     try {
       // Missing outside a secure page, so the call itself can throw as well as reject.
       await navigator.clipboard.writeText(link)

@@ -1,5 +1,5 @@
 import type { Scenario } from '../../runner/scenario.ts'
-import { firstNote } from './scenario-notes.ts'
+import { firstNote, secondNoteParts } from './scenario-notes.ts'
 import './notes.css'
 
 /**
@@ -12,9 +12,13 @@ export function ScenarioNotes(props: { readonly scenario: Scenario }) {
   return (
     <aside className="notes" aria-label="About this Scenario">
       <p className="note">{firstNote(scenario)}</p>
-      {/* The same text as secondNote, with its two labels in the heavier weight. */}
       <p className="note note-small">
-        <strong>Models:</strong> {scenario.models} <strong>Leaves out:</strong> {scenario.leavesOut}
+        {secondNoteParts(scenario).map(([label, text], i) => (
+          <span key={label}>
+            {i > 0 ? ' ' : null}
+            <strong>{label}</strong> {text}
+          </span>
+        ))}
       </p>
     </aside>
   )

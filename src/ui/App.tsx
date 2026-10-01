@@ -61,14 +61,14 @@ function ScenarioRun(props: {
     }),
     [runnerControls, initial],
   )
-  // The address bar follows the setup, so a reload or a copied address reopens it (decision 6).
-  useEffect(() => {
-    window.history.replaceState(null, '', shareUrl(window.location.href, scenario, linkDemand))
-  }, [scenario, linkDemand])
-  const link = useCallback(
+  const link = useMemo(
     () => shareUrl(window.location.href, scenario, linkDemand),
     [scenario, linkDemand],
   )
+  // The address bar follows the setup, so a reload or a copied address reopens it (decision 6).
+  useEffect(() => {
+    window.history.replaceState(null, '', link)
+  }, [link])
   /** Restarts the run on `next`, then shows it; the runner throws first if `next` cannot run. */
   const restartWith = useCallback(
     (next: Scenario) => {

@@ -9,7 +9,17 @@ export function firstNote(scenario: Scenario): string {
   return `${scenario.lesson} ${scenario.why}`
 }
 
-/** What this models and what it leaves out. */
+/** What this models and what it leaves out, as label and text pairs; the page bolds the labels. */
+export function secondNoteParts(scenario: Scenario): readonly (readonly [string, string])[] {
+  return [
+    ['Models:', scenario.models],
+    ['Leaves out:', scenario.leavesOut],
+  ]
+}
+
+/** What this models and what it leaves out, as one line of text. */
 export function secondNote(scenario: Scenario): string {
-  return `Models: ${scenario.models} Leaves out: ${scenario.leavesOut}`
+  return secondNoteParts(scenario)
+    .map((part) => part.join(' '))
+    .join(' ')
 }

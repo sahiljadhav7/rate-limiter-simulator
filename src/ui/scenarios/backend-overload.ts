@@ -46,7 +46,7 @@ export const backendOverloadScenario: Scenario = {
     "counter's Backend turns red, the token bucket's stays calm.",
   why:
     'After a quiet gap the counter lets a whole window of 70 in at once, too fast for the ' +
-    'Backend, so its queue overflows. The bucket holds 10, then lets them in one at a time.',
+    'Backend, so it sheds some. The bucket holds 10, then lets them in one at a time.',
   models:
     'One Limiter counting all Clients together, in front of one Backend with 4 slots and room ' +
     'for 20 to wait. Each Attempt takes about 50 ms there, varying a little. Traffic comes for ' +

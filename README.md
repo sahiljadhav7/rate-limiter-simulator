@@ -8,13 +8,13 @@ It is for anyone who has read "a token bucket refills at N per second" and wants
 
 ![Backend overload: Demand is dragged from 10 to 40 Requests per second, and the sliding window counter's Backend turns red and starts losing Attempts while the token bucket's stays blue](docs/backend-overload.gif)
 
-_Backend overload at seed 1: Demand dragged from 10 to 40 Requests per second. The sliding window counter's Backend says FAILING and loses about a third of what reaches it; the token bucket's keeps up. Recorded in headless Chrome from the dev server._
+_Backend overload at seed 1: Demand dragged from 10 to 40 Requests per second. The sliding window counter's Backend says FAILING with 31 to 34% LOST in this recording; the token bucket's keeps up. Recorded in headless Chrome from the dev server._
 
 ## The two Scenarios
 
 A Scenario is one lesson: the traffic, the Backend (the simulated service behind the rate limiter) and the Variants being compared. Each one explains itself in two handwritten notes under the panels.
 
-**Backend overload** (opens by default). Both rate limiters allow 70 Requests a second, under the Backend's 80, and traffic comes in bursts: 1 second on, 4 seconds off. After a quiet gap the sliding window counter lets a whole window of 70 in at once, too fast for the Backend, so its queue overflows. The token bucket holds only 10, then lets the rest in one at a time.
+**Backend overload** (opens by default). Both rate limiters allow 70 Requests a second, under the Backend's 80, and traffic comes in bursts: 1 second on, 4 seconds off. After a quiet gap the sliding window counter lets a whole window of 70 in at once, too fast for the Backend, so its queue fills and it sheds Attempts. The token bucket holds only 10, then lets the rest in one at a time.
 
 - At the default Demand of 10 a second, neither goes amber or red; at 30 and 40 a second, the sliding window counter's Backend fails with queue overflow as the Root Cause and the token bucket's never does (`tests/scenario-findings.test.ts`).
 - Goodput (Requests that succeeded, per second) at 20, 30 and 40 a second, over 8 seeds: sliding window counter 13.7, 11.6 and 9.9, so more traffic gets less work done; token bucket 15.4 to 15.7 (recorded in `src/ui/scenarios/backend-overload.ts`).
@@ -23,7 +23,7 @@ A Scenario is one lesson: the traffic, the Backend (the simulated service behind
 
 ## Sharing a setup
 
-The address bar always holds the current setup, and **Share** copies it:
+The address bar always holds the current setup, and **Share** copies it. Demand goes in when you let go of the slider, not on every step of a drag:
 
 ```
 ?s=backend-overload&seed=1&d=10&r=none.immediate
@@ -77,7 +77,7 @@ tests/        invariants, limiters, queueing behaviour, diagnosis, Scenarios
 
 - The algorithms themselves: the same arithmetic production rate limiters use, including the fixed window's burst at the window edge
 - Queueing: latency stays flat, then shoots up as the Backend nears full use
-- How retries add traffic, and why work for callers that already gave up still costs the Backend
+- How retries add traffic, and why work for Clients that already gave up still costs the Backend
 - Relative comparisons between designs on the same traffic
 
 **Not close:**
@@ -86,9 +86,9 @@ tests/        invariants, limiters, queueing behaviour, diagnosis, Scenarios
 - Networks: packet loss, variable latency, connection setup
 - Real Backends: garbage collection pauses, CPU contention, connection pools, caches
 - Real traffic: daily patterns, correlated bursts, long tails, bots
-- Several rate limiter nodes sharing a count
+- Several rate limiter nodes sharing a count: races between checking and counting, failover, clocks that drift, and whether to allow or reject everything when the shared count is unreachable
 
-Trust it for "why does this happen, and which design handles it better". Do not trust it for "how many requests can my server take".
+Trust it for "why does this happen, and which design handles it better". Do not trust it for "how many requests can my real system take".
 
 ## How the numbers are checked
 
@@ -109,7 +109,7 @@ To connect it once:
 2. Import `sahiljadhav7/rate-limiter-simulator` from GitHub.
 3. Leave the settings as `vercel.json` sets them and press **Deploy**.
 
-After that, every push to `main` redeploys, and a pull request gets a preview link.
+After that, every push to `main` redeploys.
 
 ## Credits
 
