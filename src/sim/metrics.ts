@@ -43,8 +43,18 @@ export interface Snapshot {
   readonly backendUtil: number
   /** Attempts waiting for a Backend slot at the end of the second. */
   readonly queueDepth: number
+  /**
+   * The most Attempts waiting for a slot at any moment of the second. A queue that fills and
+   * drains within the second reads 0 at its end, which would hide that it overflowed.
+   */
+  readonly peakQueueDepth: number
   /** Attempts dropped because the Backend queue was full. */
   readonly shed: number
+  /**
+   * Attempts whose caller timed out this second, retried or not. `failed.timedOut` counts
+   * only Requests that ended that way.
+   */
+  readonly attemptsTimedOut: number
   /** Attempt latency percentiles over the last 5 s, in ms; null when none completed. */
   readonly p50: number | null
   readonly p95: number | null
@@ -103,6 +113,7 @@ export interface Counts {
   goodput: number
   failed: { rejected: number; timedOut: number; shed: number }
   shed: number
+  attemptsTimedOut: number
 }
 
 function emptyCounts(): Counts {
@@ -115,6 +126,7 @@ function emptyCounts(): Counts {
     goodput: 0,
     failed: { rejected: 0, timedOut: 0, shed: 0 },
     shed: 0,
+    attemptsTimedOut: 0,
   }
 }
 
@@ -143,6 +155,8 @@ export function createMetricsCollector(subBucketMs: number) {
   const snapshots: Snapshot[] = []
   let busyBefore = 0
   let wastedBefore = 0
+  /** The most waiting so far this second; starts at the queue left over from the last one. */
+  let peakQueueDepth = 0
 
   function client(clientId: ClientId): { offeredLoad: number; allowed: number } {
     let entry = perClient.get(clientId)
@@ -177,6 +191,13 @@ export function createMetricsCollector(subBucketMs: number) {
     shed(): void {
       add((c) => c.shed++)
     },
+    /** An Attempt joined the Backend queue, which now holds `depth`. */
+    queued(depth: number): void {
+      peakQueueDepth = Math.max(peakQueueDepth, depth)
+    },
+    attemptTimedOut(): void {
+      add((c) => c.attemptsTimedOut++)
+    },
     /** A Request Succeeded at `nowMs`; records both latencies. */
     succeeded(nowMs: number, attemptMs: number, endToEndMs: number): void {
       add((c) => c.goodput++)
@@ -206,6 +227,7 @@ export function createMetricsCollector(subBucketMs: number) {
         wastedWorkMs: within(backend.wastedSlotMs - wastedBefore),
         backendUtil: within(backend.busySlotMs - busyBefore) / capacityMs,
         queueDepth: backend.queueDepth,
+        peakQueueDepth: Math.max(peakQueueDepth, backend.queueDepth),
         p50,
         p95,
         p99,
@@ -218,6 +240,7 @@ export function createMetricsCollector(subBucketMs: number) {
       while (subBuckets.length < bucketAt(endMs, subBucketMs)) subBuckets.push(0)
       busyBefore = backend.busySlotMs
       wastedBefore = backend.wastedSlotMs
+      peakQueueDepth = backend.queueDepth
       counts = emptyCounts()
       for (const entry of perClient.values()) {
         entry.offeredLoad = 0

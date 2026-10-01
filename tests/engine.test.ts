@@ -814,7 +814,9 @@ describe('createEngine', () => {
         failed: { rejected: 0, timedOut: 0, shed: 0 },
         wastedWorkMs: 0,
         queueDepth: 0,
+        peakQueueDepth: 0,
         shed: 0,
+        attemptsTimedOut: 0,
         p50: 20,
         p95: 20,
         p99: 20,
@@ -923,5 +925,68 @@ describe('createEngine', () => {
       const engine = run({ traffic: tenPerSecond }, [500])
       expect(() => engine.advanceTo(400)).toThrow(RangeError)
     })
+  })
+})
+
+describe('peak waiting and Attempt timeouts per second', () => {
+  // 10 Requests at 100 ms into 2 slots of exactly 100 ms: 2 start, 8 wait, and the queue
+  // drains by 2 every 100 ms, so it is empty again at 500 ms, long before the second ends.
+  const burst = {
+    traffic: scriptedOnly,
+    scripted: [{ atMs: 100, count: 10 }],
+    backend: { slots: 2, queueLimit: 20, meanMs: 100, cv: 0 },
+  }
+
+  it('records the most Attempts waiting during the second, not just at its end', () => {
+    const [first, second] = run(burst, [2000]).snapshots()
+    expect(first?.queueDepth).toBe(0)
+    expect(first?.peakQueueDepth).toBe(8)
+    expect(second?.peakQueueDepth).toBe(0)
+  })
+
+  it('carries a queue still waiting at the second edge into the next second as its starting peak', () => {
+    // 1,000 ms each: 8 still wait at 1 s, and 6 at 1.1 s when the first two finish.
+    const slow = { ...burst, backend: { ...burst.backend, meanMs: 1000 } }
+    const [first, second] = run(slow, [2000]).snapshots()
+    expect([first?.queueDepth, first?.peakQueueDepth]).toEqual([8, 8])
+    expect([second?.queueDepth, second?.peakQueueDepth]).toEqual([6, 8])
+  })
+
+  it('counts every Attempt whose caller timed out, in the second it timed out', () => {
+    // Timeout at 350 ms: those starting at 100 and 200 finish in time; the 6 starting at 300,
+    // 400 and 500 do not.
+    const [first] = run({ ...burst, retry: { ...noRetry, timeoutMs: 250 } }, [2000]).snapshots()
+    expect(first?.attemptsTimedOut).toBe(6)
+    expect(first?.failed.timedOut).toBe(6)
+  })
+
+  it('counts an Attempt timeout even when the Request retries and has not ended', () => {
+    // The same 6 time out, then back off 2 s, so no Request ends as timed out in second one.
+    const retry: RetryPolicy = {
+      timeoutMs: 250,
+      retry: 'backoff',
+      maxAttempts: 2,
+      baseDelayMs: 2000,
+    }
+    const [first] = run({ ...burst, retry }, [2000]).snapshots()
+    expect(first?.attemptsTimedOut).toBe(6)
+    expect(first?.failed.timedOut).toBe(0)
+  })
+
+  it('adds up to the run total', () => {
+    // Bursts with retries for 3 s, then nothing, so by 8 s every timeout has happened.
+    const scripted = Array.from({ length: 6 }, (_, i) => ({ atMs: 100 + i * 500, count: 60 }))
+    const engine = run(
+      {
+        traffic: scriptedOnly,
+        scripted,
+        backend: { slots: 2, queueLimit: 30, meanMs: 50, cv: 1 },
+        retry: { timeoutMs: 200, retry: 'immediate', maxAttempts: 3 },
+      },
+      [8000],
+    )
+    const sum = engine.snapshots().reduce((total, s) => total + s.attemptsTimedOut, 0)
+    expect(sum).toBeGreaterThan(20)
+    expect(sum).toBe(engine.totals().attempts.timedOut)
   })
 })

@@ -259,6 +259,7 @@ export function createEngine(options: EngineOptions): Engine {
       return
     }
     attempt.stage = 'backend'
+    if (result.kind === 'queued') metrics.queued(backend.queueDepth())
     if (result.kind === 'started') queue.push(result.endsAtMs, { kind: 'serviceEnd', attempt })
     if (attempt.abandoned) backend.abandon(attempt, clock.now())
   }
@@ -270,6 +271,7 @@ export function createEngine(options: EngineOptions): Engine {
   function timeout(attempt: AttemptState): void {
     if (attempt.stage === 'done') return
     attempts.timedOut++
+    metrics.attemptTimedOut()
     attempt.abandoned = true
     if (attempt.stage === 'backend') backend.abandon(attempt, clock.now())
     retryOrEnd(attempt, 'timedOut')
