@@ -11,6 +11,31 @@ import type { AllowedSubBuckets } from '../../sim/index.ts'
  */
 export const VISIBLE_MS = 60_000
 
+/** Room at a chart's right edge for the axis labels, in px. */
+export const AXIS_WIDTH = 40
+
+/** Where a chart draws, horizontally, at a measured width. */
+export interface ChartLayout {
+  /** The SVG's width in px, drawn at 1:1 so text keeps its real size. */
+  readonly width: number
+  /** Where the plot ends and the axis labels begin, in px. */
+  readonly plotRight: number
+  /** One simulated second along the plot, for moving the crosshair with the arrow keys, in px. */
+  readonly keyStepPx: number
+}
+
+/**
+ * A chart's layout at `measuredWidth` px, rounded down to a whole pixel so it never overflows
+ * its column; null until there is room for a plot beside the axis labels, so a chart that has
+ * not been measured yet draws nothing rather than NaN.
+ */
+export function chartLayout(measuredWidth: number): ChartLayout | null {
+  const width = Math.floor(measuredWidth)
+  const plotRight = width - AXIS_WIDTH
+  if (!(plotRight > 0)) return null
+  return { width, plotRight, keyStepPx: (plotRight * 1000) / VISIBLE_MS }
+}
+
 /** One point of a series: `v` is null when there was nothing to measure (no value, no point). */
 export interface Point {
   /** Simulated time, in ms. */

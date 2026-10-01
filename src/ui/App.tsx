@@ -1,35 +1,39 @@
+import type { CSSProperties } from 'react'
 import { edgeBurstScenario } from './edge-burst-scenario.ts'
+import { VariantPanel } from './panel/VariantPanel.tsx'
 import { useRunner } from './use-runner.ts'
-import { VariantCharts } from './VariantCharts.tsx'
+import './app.css'
 
-// Until the panels and controls (RS-17, RS-18): the Edge burst Scenario's charts, one column
-// per Variant.
+// Until the Scenario picker (RS-18): the Edge burst Scenario, one panel per Variant.
+const scenario = edgeBurstScenario
+
 export function App() {
-  const { view } = useRunner(edgeBurstScenario)
+  const { view } = useRunner(scenario)
   return (
-    <main className="shell">
-      <h1>Ratescale</h1>
-      <p className="sim-time">
-        Simulated time <span data-testid="sim-time">{(view.simMs / 1000).toFixed(1)}</span> s
-      </p>
-      <div className="variants">
-        {edgeBurstScenario.variants.map((config, i) => {
+    <div className="page">
+      <header className="top-bar">
+        {/* The Demand, transport and speed island (RS-18) and Share (RS-21) go beside this. */}
+        <div className="island top-bar-name">
+          <span className="app-name">Ratescale</span>
+          <span className="scenario-title">{scenario.title}</span>
+        </div>
+      </header>
+      <main className="panels" style={{ '--columns': scenario.variants.length } as CSSProperties}>
+        {scenario.variants.map((config, i) => {
           // The runner keeps the Scenario's Variant order, so the view lines up with the config.
           const variant = view.variants[i]
           return variant ? (
-            <section key={config.label} className="variant" data-testid="variant">
-              <h2>{config.label}</h2>
-              <VariantCharts
-                variant={variant}
-                config={config}
-                backend={edgeBurstScenario.backend}
-                clients={edgeBurstScenario.traffic.clients.length}
-                nowMs={view.simMs}
-              />
-            </section>
+            <VariantPanel
+              key={config.label}
+              variant={variant}
+              config={config}
+              backend={scenario.backend}
+              clients={scenario.traffic.clients.length}
+              nowMs={view.simMs}
+            />
           ) : null
         })}
-      </div>
-    </main>
+      </main>
+    </div>
   )
 }

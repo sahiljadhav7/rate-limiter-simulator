@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  chartLayout,
   formatRatio,
   gridValues,
   hoverAt,
@@ -269,5 +270,22 @@ describe('hoverAt', () => {
     const short = [...series, { label: 'p95', points: [{ t: 1000, v: 20 }] }]
     expect(hoverAt(short, 3000)?.values.at(-1)).toEqual({ label: 'p95', v: null })
     expect(hoverAt([{ label: 'p50', points: [] }], 1000)).toBeNull()
+  })
+})
+
+describe('chartLayout', () => {
+  it('leaves 40 px for the axis labels, and moves the crosshair a simulated second per key', () => {
+    // 60 s across 480 px of plot: 8 px a second.
+    expect(chartLayout(520)).toEqual({ width: 520, plotRight: 480, keyStepPx: 8 })
+    expect(chartLayout(280)).toEqual({ width: 280, plotRight: 240, keyStepPx: 4 })
+  })
+
+  it('rounds a fractional measured width down to a whole pixel, so the chart never overflows', () => {
+    expect(chartLayout(520.7)?.width).toBe(520)
+  })
+
+  it('gives null until there is room for a plot, so nothing is drawn at a width of 0', () => {
+    expect(chartLayout(0)).toBeNull()
+    expect(chartLayout(40)).toBeNull()
   })
 })

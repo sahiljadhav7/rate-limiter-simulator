@@ -174,29 +174,3 @@ body {
   -webkit-font-smoothing: antialiased;
   font-synthesis: none;
 }
-
-.shell {
-  padding: var(--sp-4);
-}
-
-/* Temporary layout until the panels (RS-17). */
-.variants {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-7);
-}
-
-.variant {
-  display: grid;
-  gap: var(--sp-4);
-}
-
-.variant-charts {
-  display: grid;
-  gap: var(--sp-4);
-}
-
-.sim-time span {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-}

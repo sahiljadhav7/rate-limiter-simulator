@@ -1,0 +1,109 @@
+/* Variant panels (DESIGN.md "Island", "Pill", "Stat", "Layout"). Every colour is a token. */
+.island {
+  background: var(--surface);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--sp-3);
+}
+
+.label {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-med);
+  letter-spacing: var(--tr-label);
+  line-height: var(--lh-label);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-med);
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/*
+ * One column per Variant at 1024px and wider. Each panel spans --panel-rows rows of the page
+ * grid and shares them through subgrid, so the same row lines up in every column. Below that
+ * the panels stack, each its own grid, and no alignment is needed.
+ */
+.panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--sp-4);
+  align-content: start;
+}
+
+@media (min-width: 1024px) {
+  .panel {
+    grid-row: span var(--panel-rows);
+    grid-template-rows: subgrid;
+  }
+}
+
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.panel-head h2 {
+  margin: 0 var(--sp-1) 0 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-num);
+  letter-spacing: var(--tr-lg);
+  line-height: var(--lh-num);
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-2) var(--sp-5);
+  margin: 0;
+}
+
+.stat dd {
+  margin: 0;
+}
+
+.stat-value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-num);
+  font-weight: var(--fw-num);
+  letter-spacing: var(--tr-num);
+  line-height: var(--lh-num);
+  white-space: nowrap;
+}
+
+.stat-hero .stat-value {
+  font-size: var(--fs-hero);
+  letter-spacing: var(--tr-hero);
+  line-height: var(--lh-hero);
+}
+
+.unit {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-body);
+  letter-spacing: 0;
+  color: var(--text-dim);
+}
+
+/* The boundary-burst row of a Limiter without a window: a line of text in the chart's place. */
+.chart-none p {
+  margin: var(--sp-1) 0 0;
+  max-width: 40ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-dim);
+}

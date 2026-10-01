@@ -1,0 +1,39 @@
+/* The page (DESIGN.md "Layout"): the top bar, then the Variant panels, on the graph paper. */
+.page {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+}
+
+.top-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.top-bar-name {
+  display: grid;
+}
+
+.app-name {
+  font-weight: var(--fw-num);
+}
+
+.scenario-title {
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+/* Stacked below 1024px; one equal column per Variant from there (see .panel in panel.css). */
+.panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+
+@media (min-width: 1024px) {
+  .panels {
+    grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
+    row-gap: var(--sp-4);
+  }
+}

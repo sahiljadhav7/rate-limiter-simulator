@@ -1,6 +1,7 @@
 import { memo, useId, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { WARM_UP_MS } from '../../sim/index.ts'
 import {
+  chartLayout,
   formatRatio,
   gridValues,
   hoverAt,
@@ -10,9 +11,9 @@ import {
   timeDomain,
   toAreas,
   toPolylines,
-  VISIBLE_MS,
   type Point,
 } from './geometry.ts'
+import { useElementWidth } from './use-element-width.ts'
 import './chart.css'
 
 /** One line on a chart. */
@@ -61,16 +62,14 @@ export interface TimeSeriesChartProps {
   readonly unit: string
 }
 
-/** The chart's size in px. The panels (RS-17) may make it fluid; the SVG scales down already. */
-const WIDTH = 520
+/**
+ * The chart's height in px. Its width is its column's, measured, so text keeps its real size
+ * at any number of columns (.scratch/panels/spec.md decision 8).
+ */
 const HEIGHT = 140
-/** Room at the right edge for the axis labels, in px. */
-const AXIS_WIDTH = 40
 /** The highest and lowest y a value is drawn at, in px, leaving room for line caps. */
 const TOP = 8
 const BOTTOM = HEIGHT - 4
-/** Where the plot ends and the axis labels begin, in px. */
-const PLOT_RIGHT = WIDTH - AXIS_WIDTH
 
 /** A series' stroke width, in px (DESIGN.md "Charts"). */
 const SERIES_WIDTH = 1.5
@@ -96,9 +95,6 @@ function latest(points: readonly Point[]): number | null {
   return null
 }
 
-/** One simulated second along the plot, for moving the crosshair with the arrow keys, in px. */
-const KEY_STEP_PX = (PLOT_RIGHT * 1000) / VISIBLE_MS
-
 /**
  * A value as text: whole numbers, or one decimal place below 10. `missing` is what to show
  * when there is no value, never 0 (CLAUDE.md "The one rule").
@@ -116,13 +112,18 @@ function asText(value: number | null, missing: string): string {
 export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesChartProps) {
   const { title, nowMs, series, referenceLines = [], markers = [], overLimit, unit } = props
   const clipId = useId()
+  const [measureRef, measuredWidth] = useElementWidth<HTMLElement>()
+  /** Null until the figure has been measured: then nothing is drawn, rather than NaN. */
+  const layout = chartLayout(measuredWidth)
+  const width = layout?.width ?? 0
+  const plotRight = layout?.plotRight ?? 0
   /**
    * Where the pointer or keyboard put the crosshair, in px along the plot. Kept as a position
    * rather than a time, so the crosshair stays under the pointer while the chart scrolls.
    */
   const [hoverPx, setHoverPx] = useState<number | null>(null)
   const domain = timeDomain(nowMs)
-  const x = linearScale(domain, [0, PLOT_RIGHT])
+  const x = linearScale(domain, [0, plotRight])
   let highest = 0
   for (const s of series) for (const p of s.points) if (p.v !== null && p.v > highest) highest = p.v
   for (const line of referenceLines) highest = Math.max(highest, line.value)
@@ -147,20 +148,21 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
     ratio !== null && ratio > 1 ? `peak ${formatRatio(ratio)} the limit in the last 60 s` : null
 
   const hover =
-    hoverPx === null ? null : hoverAt(series, linearScale([0, PLOT_RIGHT], domain)(hoverPx))
+    hoverPx === null ? null : hoverAt(series, linearScale([0, plotRight], domain)(hoverPx))
   const hoverX = hover === null ? 0 : x(hover.t)
 
   function onPointerMove(event: PointerEvent<SVGSVGElement>) {
     const box = event.currentTarget.getBoundingClientRect()
-    const px = ((event.clientX - box.left) * WIDTH) / box.width
-    setHoverPx(px <= PLOT_RIGHT ? Math.max(0, px) : null)
+    const px = ((event.clientX - box.left) * width) / box.width
+    setHoverPx(px <= plotRight ? Math.max(0, px) : null)
   }
 
   function onKeyDown(event: KeyboardEvent<SVGSVGElement>) {
-    const step = { ArrowLeft: -KEY_STEP_PX, ArrowRight: KEY_STEP_PX }[event.key]
+    const keyStepPx = layout?.keyStepPx ?? 0
+    const step = { ArrowLeft: -keyStepPx, ArrowRight: keyStepPx }[event.key]
     if (step !== undefined) {
       event.preventDefault()
-      setHoverPx((px) => Math.min(PLOT_RIGHT, Math.max(0, (px ?? PLOT_RIGHT) + step)))
+      setHoverPx((px) => Math.min(plotRight, Math.max(0, (px ?? plotRight) + step)))
     } else if (event.key === 'Escape') {
       setHoverPx(null)
     }
@@ -174,8 +176,7 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
     (peakText ? `; ${peakText}` : '')
 
   return (
-    // As wide as the plot, so a long legend wraps rather than widening the column.
-    <figure className="chart" style={{ maxWidth: WIDTH }}>
+    <figure className="chart" ref={measureRef}>
       <figcaption className="chart-head">
         <span className="chart-title">{title}</span>
         {peakText ? <span className="chart-peak">{peakText}</span> : null}
@@ -198,113 +199,115 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
           ))}
         </ul>
       </figcaption>
-      <div className="chart-box">
-        <svg
-          className="chart-plot"
-          width={WIDTH}
-          height={HEIGHT}
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          role="img"
-          aria-label={summary}
-          // Focusable so the arrow keys can move the crosshair (DESIGN.md "Accessibility").
-          tabIndex={0}
-          onPointerMove={onPointerMove}
-          onPointerLeave={() => setHoverPx(null)}
-          onKeyDown={onKeyDown}
-          onBlur={() => setHoverPx(null)}
-        >
-          <rect className="chart-surface" x="0" y="0" width={PLOT_RIGHT} height={HEIGHT} />
-          {showWarmUp ? (
-            <g className="chart-warm-up">
-              <rect x="0" y="0" width={Math.max(0, warmUpEnd)} height={HEIGHT} />
-              {showWarmUpPill ? (
-                <>
-                  <rect
-                    className="chart-pill"
-                    x="3"
-                    y={TOP}
-                    width={pillWidth('WARM-UP')}
-                    height={PILL_HEIGHT}
-                    rx={PILL_HEIGHT / 2}
-                  />
-                  <text x={3 + PILL_PADDING_PX / 2} y={TOP + 9.5}>
-                    WARM-UP
-                  </text>
-                </>
-              ) : null}
-            </g>
-          ) : null}
-          {gridValues(yMax).map((value) => (
-            <g key={value}>
-              <line className="chart-grid" x1="0" x2={PLOT_RIGHT} y1={y(value)} y2={y(value)} />
-              <text className="chart-axis" x={PLOT_RIGHT + 6} y={y(value) + 3.5}>
-                {value}
-              </text>
-            </g>
-          ))}
-          {overLimit && limited && peakText ? (
-            <g>
-              <clipPath id={clipId}>
-                <rect x="0" y="0" width={PLOT_RIGHT} height={y(overLimit.limit)} />
-              </clipPath>
-              {toAreas(limited.points, x, y, BOTTOM).map((points) => (
-                <polygon
-                  key={points}
-                  className="chart-over-limit"
-                  clipPath={`url(#${clipId})`}
-                  points={points}
-                />
-              ))}
-            </g>
-          ) : null}
-          {referenceLines.map((line) => (
-            <g key={line.label} className="chart-reference">
-              <line x1="0" x2={PLOT_RIGHT} y1={y(line.value)} y2={y(line.value)} />
-              <text x={PLOT_RIGHT - 4} y={y(line.value) - 4}>
-                {line.label} {line.value}
-              </text>
-            </g>
-          ))}
-          {series.map((s) =>
-            toPolylines(s.points, x, y).map((points, i) => (
-              <polyline
-                key={`${s.id}-${i}`}
-                className="chart-series"
-                points={points}
-                stroke={s.color}
-                strokeWidth={s.width ?? SERIES_WIDTH}
-                strokeDasharray={s.dashed ? SERIES_DASH : undefined}
-              />
-            )),
-          )}
-          {markers
-            .filter((m) => m.t >= domain[0] && m.t <= domain[1])
-            .map((m) => (
-              <g key={`${m.t}-${m.label}`} className="chart-marker">
-                <line x1={x(m.t)} x2={x(m.t)} y1="0" y2={HEIGHT} />
-                <rect
-                  className="chart-pill"
-                  x={x(m.t) + 3}
-                  y={TOP}
-                  width={pillWidth(m.label)}
-                  height={PILL_HEIGHT}
-                  rx={PILL_HEIGHT / 2}
-                />
-                <text x={x(m.t) + 3 + PILL_PADDING_PX / 2} y={TOP + 9.5}>
-                  {m.label}
+      <div className="chart-box" style={{ height: HEIGHT }}>
+        {layout ? (
+          <svg
+            className="chart-plot"
+            width={width}
+            height={HEIGHT}
+            viewBox={`0 0 ${width} ${HEIGHT}`}
+            role="img"
+            aria-label={summary}
+            // Focusable so the arrow keys can move the crosshair (DESIGN.md "Accessibility").
+            tabIndex={0}
+            onPointerMove={onPointerMove}
+            onPointerLeave={() => setHoverPx(null)}
+            onKeyDown={onKeyDown}
+            onBlur={() => setHoverPx(null)}
+          >
+            <rect className="chart-surface" x="0" y="0" width={plotRight} height={HEIGHT} />
+            {showWarmUp ? (
+              <g className="chart-warm-up">
+                <rect x="0" y="0" width={Math.max(0, warmUpEnd)} height={HEIGHT} />
+                {showWarmUpPill ? (
+                  <>
+                    <rect
+                      className="chart-pill"
+                      x="3"
+                      y={TOP}
+                      width={pillWidth('WARM-UP')}
+                      height={PILL_HEIGHT}
+                      rx={PILL_HEIGHT / 2}
+                    />
+                    <text x={3 + PILL_PADDING_PX / 2} y={TOP + 9.5}>
+                      WARM-UP
+                    </text>
+                  </>
+                ) : null}
+              </g>
+            ) : null}
+            {gridValues(yMax).map((value) => (
+              <g key={value}>
+                <line className="chart-grid" x1="0" x2={plotRight} y1={y(value)} y2={y(value)} />
+                <text className="chart-axis" x={plotRight + 6} y={y(value) + 3.5}>
+                  {value}
                 </text>
               </g>
             ))}
-          {hover ? (
-            <line className="chart-crosshair" x1={hoverX} x2={hoverX} y1="0" y2={HEIGHT} />
-          ) : null}
-        </svg>
+            {overLimit && limited && peakText ? (
+              <g>
+                <clipPath id={clipId}>
+                  <rect x="0" y="0" width={plotRight} height={y(overLimit.limit)} />
+                </clipPath>
+                {toAreas(limited.points, x, y, BOTTOM).map((points) => (
+                  <polygon
+                    key={points}
+                    className="chart-over-limit"
+                    clipPath={`url(#${clipId})`}
+                    points={points}
+                  />
+                ))}
+              </g>
+            ) : null}
+            {referenceLines.map((line) => (
+              <g key={line.label} className="chart-reference">
+                <line x1="0" x2={plotRight} y1={y(line.value)} y2={y(line.value)} />
+                <text x={plotRight - 4} y={y(line.value) - 4}>
+                  {line.label} {line.value}
+                </text>
+              </g>
+            ))}
+            {series.map((s) =>
+              toPolylines(s.points, x, y).map((points, i) => (
+                <polyline
+                  key={`${s.id}-${i}`}
+                  className="chart-series"
+                  points={points}
+                  stroke={s.color}
+                  strokeWidth={s.width ?? SERIES_WIDTH}
+                  strokeDasharray={s.dashed ? SERIES_DASH : undefined}
+                />
+              )),
+            )}
+            {markers
+              .filter((m) => m.t >= domain[0] && m.t <= domain[1])
+              .map((m) => (
+                <g key={`${m.t}-${m.label}`} className="chart-marker">
+                  <line x1={x(m.t)} x2={x(m.t)} y1="0" y2={HEIGHT} />
+                  <rect
+                    className="chart-pill"
+                    x={x(m.t) + 3}
+                    y={TOP}
+                    width={pillWidth(m.label)}
+                    height={PILL_HEIGHT}
+                    rx={PILL_HEIGHT / 2}
+                  />
+                  <text x={x(m.t) + 3 + PILL_PADDING_PX / 2} y={TOP + 9.5}>
+                    {m.label}
+                  </text>
+                </g>
+              ))}
+            {hover ? (
+              <line className="chart-crosshair" x1={hoverX} x2={hoverX} y1="0" y2={HEIGHT} />
+            ) : null}
+          </svg>
+        ) : null}
         {hover ? (
           <div
             className="chart-tooltip"
             aria-hidden="true"
-            data-side={hoverX > PLOT_RIGHT / 2 ? 'left' : 'right'}
-            style={{ left: `${(hoverX / WIDTH) * 100}%` }}
+            data-side={hoverX > plotRight / 2 ? 'left' : 'right'}
+            style={{ left: `${(hoverX / width) * 100}%` }}
           >
             <div className="chart-tooltip-time">{(hover.t / 1000).toFixed(1)} s</div>
             {hover.values.map(({ label, v }) => (

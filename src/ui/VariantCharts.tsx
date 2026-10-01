@@ -4,12 +4,22 @@ import type { VariantConfig } from '../runner/scenario.ts'
 import { limiterWindow, type BackendSpec, type Snapshot } from '../sim/index.ts'
 import { rollingWindowCounts, timeDomain, visibleSnapshots, type Point } from './chart/geometry.ts'
 import { TimeSeriesChart } from './chart/TimeSeriesChart.tsx'
+import { ALGORITHM_NAMES } from './panel/limiter-names.ts'
 import { limiterCapacity } from './panel/stats.ts'
 
 /** One value of every visible Snapshot, at the end of the second it covers. */
 function pointsOf(snapshots: readonly Snapshot[], pick: (s: Snapshot) => number | null): Point[] {
   return snapshots.map((s) => ({ t: s.t, v: pick(s) }))
 }
+
+/**
+ * How many rows VariantCharts adds to its panel, one per chart. Every Variant has the same
+ * rows, a Limiter without a window included, so the panels' rows line up.
+ */
+export const CHART_ROWS = 5
+
+/** The boundary-burst chart's title; a Limiter without a window keeps it over a short line. */
+const BOUNDARY_TITLE = 'Allowed in the last window'
 
 /** What one Variant's charts are drawn from. */
 export interface VariantChartsProps {
@@ -23,8 +33,9 @@ export interface VariantChartsProps {
 }
 
 /**
- * The charts of one Variant: the boundary burst (for a Limiter with a window), Attempts per
- * second, latency, the Backend queue, and Offered Load against Demand.
+ * The charts of one Variant, one grid row each (CHART_ROWS): the boundary burst, Attempts per
+ * second, latency, the Backend queue, and Offered Load against Demand. A Limiter without a
+ * window (token bucket) has no boundary burst, so its first row says so instead.
  */
 export const VariantCharts = memo(function VariantCharts({
   variant,
@@ -37,10 +48,10 @@ export const VariantCharts = memo(function VariantCharts({
   const limiterWindowSpec = limiterWindow(config.limiter)
   const [start] = timeDomain(nowMs)
   return (
-    <div className="variant-charts">
+    <>
       {limiterWindowSpec ? (
         <TimeSeriesChart
-          title="Allowed in the last window"
+          title={BOUNDARY_TITLE}
           unit=""
           nowMs={nowMs}
           series={[
@@ -59,7 +70,15 @@ export const VariantCharts = memo(function VariantCharts({
           referenceLines={[{ value: limiterWindowSpec.limit, label: 'limit' }]}
           overLimit={{ seriesId: 'rolling', limit: limiterWindowSpec.limit }}
         />
-      ) : null}
+      ) : (
+        <div className="chart-none">
+          <span className="chart-title">{BOUNDARY_TITLE}</span>
+          <p>
+            {ALGORITHM_NAMES[config.limiter.algo]} has no window edge, so there is no boundary burst
+            to show.
+          </p>
+        </div>
+      )}
       <TimeSeriesChart
         title="Attempts per second"
         unit="per second"
@@ -146,6 +165,6 @@ export const VariantCharts = memo(function VariantCharts({
           },
         ]}
       />
-    </div>
+    </>
   )
 })
