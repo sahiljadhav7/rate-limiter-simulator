@@ -4,14 +4,16 @@ import type { VariantConfig } from '../../runner/scenario.ts'
 import type { BackendSpec } from '../../sim/index.ts'
 import { CHART_ROWS, VariantCharts } from '../VariantCharts.tsx'
 import { ALGORITHM_NAMES, KEY_SCOPE_NAMES } from './limiter-names.ts'
+import { PipelineStrip } from './PipelineStrip.tsx'
 import { DASH, formatRate, formatShare, panelStats } from './stats.ts'
 import './panel.css'
 
 /**
- * How many grid rows a panel has: the header, the stat row and the charts. The panels share
- * these rows through `subgrid`, so the same row sits at the same height in every column.
+ * How many grid rows a panel has: the header, the pipeline strip, the stat row and the charts.
+ * The panels share these rows through `subgrid`, so the same row sits at the same height in
+ * every column.
  */
-export const PANEL_ROWS = 2 + CHART_ROWS
+export const PANEL_ROWS = 3 + CHART_ROWS
 
 /** One stat (DESIGN.md "Stat"): label above, the value in mono, the unit beside it. */
 function Stat(props: {
@@ -45,8 +47,8 @@ export interface VariantPanelProps {
 
 /**
  * One Variant as an island (DESIGN.md "Island"): a header naming it with its algorithm and key
- * scope, the stat row over the last 5 seconds, then its charts. The pipeline strip (ticket 06)
- * goes between the header and the stats, and the diagnosis card (RS-26) after the charts.
+ * scope, the pipeline strip and the stat row over the last 5 seconds, then its charts. The
+ * diagnosis card (RS-26) goes after the charts.
  */
 export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps) {
   const { variant, config, backend, clients, nowMs } = props
@@ -64,6 +66,7 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
         <span className="pill">{ALGORITHM_NAMES[config.limiter.algo]}</span>
         <span className="pill">{KEY_SCOPE_NAMES[config.limiter.keyBy]}</span>
       </header>
+      <PipelineStrip stats={stats} />
       <dl className="stats" aria-label="Last 5 seconds">
         <Stat label="Offered Load" value={formatRate(stats.offeredLoad)} unit="/s" />
         <Stat label="Goodput" value={formatRate(stats.goodput)} unit="/s" />

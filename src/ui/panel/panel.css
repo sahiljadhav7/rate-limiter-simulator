@@ -107,3 +107,142 @@
   line-height: var(--lh-sm);
   color: var(--text-dim);
 }
+
+/*
+ * Pipeline strip (DESIGN.md "Pipeline node", "Edge"). The --k-* kind tokens are declared only
+ * on the [data-kind] rules, and component rules read them with fallbacks inside var(): a class
+ * rule declaring them too would tie on specificity and win or lose by source order (CLAUDE.md).
+ */
+[data-kind='client'] {
+  --k-fill: var(--kind-client-fill);
+  --k-line: var(--kind-client-line);
+  --k-stroke: var(--kind-client-stroke);
+  --k-ink: var(--kind-client-ink);
+}
+
+[data-kind='limiter'] {
+  --k-fill: var(--kind-limiter-fill);
+  --k-line: var(--kind-limiter-line);
+  --k-stroke: var(--kind-limiter-stroke);
+  --k-ink: var(--kind-limiter-ink);
+}
+
+[data-kind='backend'] {
+  --k-fill: var(--kind-backend-fill);
+  --k-line: var(--kind-backend-line);
+  --k-stroke: var(--kind-backend-stroke);
+  --k-ink: var(--kind-backend-ink);
+}
+
+.pipeline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.node {
+  position: relative;
+  align-self: stretch;
+  overflow: hidden;
+  padding: var(--sp-2) var(--sp-2) calc(var(--sp-2) + var(--track-h));
+  background: var(--k-fill, var(--surface-2));
+  border: var(--bw-strong) solid var(--k-stroke, var(--border-strong));
+  border-radius: var(--r-md);
+}
+
+.node-name {
+  display: block;
+  padding-bottom: var(--sp-1);
+  margin-bottom: var(--sp-1);
+  border-bottom: var(--bw) solid var(--k-line, var(--border));
+  font-weight: var(--fw-med);
+  line-height: var(--lh-num);
+}
+
+.node-metrics {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The label wraps under its value when the node is narrow, as at three columns. */
+.node-metrics li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--sp-1);
+  line-height: var(--lh-sm);
+}
+
+.node-value,
+.node-label {
+  white-space: nowrap;
+}
+
+.node-value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-num);
+  color: var(--text);
+}
+
+.node-unit {
+  font-weight: var(--fw-body);
+}
+
+.node-label {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-num);
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  color: var(--k-ink, var(--text-dim));
+}
+
+.meter {
+  position: absolute;
+  inset: auto 0 0;
+  height: var(--track-h);
+  background: var(--track);
+}
+
+.meter-fill {
+  height: 100%;
+  background: var(--k-stroke, var(--line-4));
+}
+
+.edge {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 36px;
+  padding: 0 var(--sp-1);
+}
+
+.edge-rate {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* A static dashed arrow; the dashes move with the rate from RS-22. */
+.edge-line {
+  position: relative;
+  width: 100%;
+  border-top: var(--bw-strong) dashed var(--line-2);
+}
+
+.edge-line::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -5px;
+  border: 4px solid transparent;
+  border-right: 0;
+  border-left: 6px solid var(--line-2);
+}
