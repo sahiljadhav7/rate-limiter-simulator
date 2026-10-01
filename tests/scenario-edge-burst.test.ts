@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createRunner } from '../src/runner/runner.ts'
 import { checkScenario } from '../src/runner/scenario.ts'
 import { rollingWindowCounts } from '../src/ui/chart/geometry.ts'
-import { edgeBurstScenario } from '../src/ui/edge-burst-scenario.ts'
+import { edgeBurstScenario } from '../src/ui/scenarios/edge-burst.ts'
 
 /**
  * What the boundary-burst chart shows for the Edge burst Scenario, computed from the same seed the

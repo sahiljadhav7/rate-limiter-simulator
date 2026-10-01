@@ -1,6 +1,5 @@
 /**
- * The Scenario the app runs until RS-19a brings the full set, so the charts have something true
- * to draw. Fixed window against sliding window counter on an Edge Burst: 30 Requests 50 ms
+ * The boundary burst lesson. Fixed window against sliding window counter on an Edge Burst: 30 Requests 50 ms
  * before a window edge and 30 just after, every 10 seconds, on light background traffic.
  *
  * The arithmetic (CLAUDE.md "Adding a scenario"): the Backend's ceiling is 4 slots x (1000 / 50)
@@ -10,7 +9,7 @@
  * before and lets about 10 through. 20 Attempts at once queue for at most 5 x 50 ms, well
  * inside the 1 s timeout, so what the Limiter allows is what the Backend serves.
  */
-import type { Scenario } from '../runner/scenario.ts'
+import type { Scenario } from '../../runner/scenario.ts'
 
 const WINDOW_MS = 1000
 const BURST_EVERY_MS = 10_000

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { withRetryMode, withVariantRetry } from '../src/ui/controls/retry-options.ts'
 import { checkRetryPolicy, type RetryPolicy } from '../src/sim/index.ts'
-import { edgeBurstScenario } from '../src/ui/edge-burst-scenario.ts'
+import { edgeBurstScenario } from '../src/ui/scenarios/edge-burst.ts'
 
 const none: RetryPolicy = { timeoutMs: 1000, maxAttempts: 1, retry: 'none' }
 
