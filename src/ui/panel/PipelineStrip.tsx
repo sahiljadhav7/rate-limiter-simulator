@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import type { Finding, Severity } from '../../sim/index.ts'
+import { nodeState, type NodeState } from './node-state.ts'
 import { DASH, formatNumber, formatShare, type PanelStats } from './stats.ts'
 
 /** A pipeline node's kind, which picks its colours through the `[data-kind]` rules. */
@@ -12,8 +14,8 @@ interface Metric {
 }
 
 /**
- * A bar along the bottom of a node, from 0 to 1: how close it is to what it can handle. Never
- * --danger-mark yet; a node turns failing only when diagnosis (RS-26) says so.
+ * A bar along the bottom of a node, from 0 to 1: how close it is to what it can handle. It
+ * turns amber or red only with the node, which only a Finding makes so.
  */
 interface Meter {
   readonly value: number | null
@@ -26,11 +28,16 @@ function Node(props: {
   readonly name: string
   readonly metrics: readonly Metric[]
   readonly meter?: Meter
+  /** From the Findings about this node; healthy when left out. */
+  readonly state?: NodeState
 }) {
-  const { kind, name, metrics, meter } = props
+  const { kind, name, metrics, meter, state } = props
   return (
-    <li className="node" data-kind={kind}>
-      <span className="node-name">{name}</span>
+    <li className="node" data-kind={kind} data-state={state?.severity ?? undefined}>
+      <span className="node-name">
+        {name}
+        {state?.word ? <span className="node-word"> {state.word}</span> : null}
+      </span>
       <ul className="node-metrics">
         {metrics.map((m, i) => (
           // The metrics of a node never change order, so the index is a stable key.
@@ -59,11 +66,22 @@ function Node(props: {
   )
 }
 
-/** The arrow between two nodes, with the rate flowing along it. Static until RS-22. */
-function Edge(props: { readonly rate: number | null; readonly label: string }) {
+/**
+ * The arrow between two nodes, with the rate flowing along it. Static until RS-22. It turns red
+ * when the node it feeds is failing (DESIGN.md "Edge").
+ */
+function Edge(props: {
+  readonly rate: number | null
+  readonly label: string
+  readonly severity?: Severity | null
+}) {
   const text = formatNumber(props.rate)
   return (
-    <li className="edge" aria-label={`${props.label}: ${text} per second`}>
+    <li
+      className="edge"
+      data-state={props.severity ?? undefined}
+      aria-label={`${props.label}: ${text} per second`}
+    >
       <span className="edge-rate" aria-hidden="true">
         {text}
         {props.rate === null ? null : '/s'}
@@ -74,15 +92,21 @@ function Edge(props: { readonly rate: number | null; readonly label: string }) {
 }
 
 /**
- * A Variant's pipeline (DESIGN.md "Pipeline node", "Edge"): Clients → Limiter → Backend with
- * the same numbers as the stat row: rates and Busy over the last 5 seconds, Waiting now. Real text in a list,
- * so a screen reader reads it in order.
+ * A Variant's pipeline (DESIGN.md "Pipeline node", "Edge"): Clients → Limiter → Backend with the
+ * same numbers as the stat row, over the last 5 seconds, and the most waiting in the newest one.
+ * A node the Findings say is struggling or failing says so, in colour and in words. Real text in
+ * a list, so a screen reader reads it in order.
  */
-export function PipelineStrip({ stats }: { readonly stats: PanelStats }) {
+export function PipelineStrip(props: {
+  readonly stats: PanelStats
+  readonly findings: readonly Finding[]
+}) {
+  const { stats, findings } = props
+  const backend = nodeState(findings, 'backend')
   return (
     <ol
       className="pipeline"
-      aria-label="Pipeline: rates and Busy over the last 5 seconds, Waiting now"
+      aria-label="Pipeline: rates and Busy over the last 5 seconds, most waiting in the last second"
     >
       <Node
         kind="client"
@@ -102,7 +126,7 @@ export function PipelineStrip({ stats }: { readonly stats: PanelStats }) {
         ]}
         meter={{ value: stats.limiterMeter, label: 'Allowed against the limit, percent' }}
       />
-      <Edge rate={stats.allowed} label="Allowed to the Backend" />
+      <Edge rate={stats.allowed} label="Allowed to the Backend" severity={backend.severity} />
       <Node
         kind="backend"
         name="Backend"
@@ -113,9 +137,12 @@ export function PipelineStrip({ stats }: { readonly stats: PanelStats }) {
             unit: 'ms',
             label: <abbr title="99th percentile">p99</abbr>,
           },
-          { value: formatNumber(stats.waiting), unit: '', label: 'Waiting' },
+          { value: formatNumber(stats.waiting), unit: '', label: 'Most waiting' },
+          // The share the Finding measured, shown as it shows it, only while there is one.
+          ...(backend.lost === null ? [] : [{ value: backend.lost, unit: '', label: 'Lost' }]),
         ]}
         meter={{ value: stats.backendMeter, label: 'Backend slots busy, percent' }}
+        state={backend}
       />
     </ol>
   )

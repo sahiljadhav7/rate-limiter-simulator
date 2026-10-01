@@ -1,10 +1,11 @@
 import { memo, useId, type CSSProperties, type ReactNode } from 'react'
 import type { VariantView } from '../../runner/runner.ts'
 import type { VariantConfig } from '../../runner/scenario.ts'
-import type { BackendSpec } from '../../sim/index.ts'
+import type { BackendSpec, Severity } from '../../sim/index.ts'
 import { RETRY_MODES, type RetryMode } from '../controls/retry-options.ts'
 import { CHART_ROWS, VariantCharts } from '../VariantCharts.tsx'
 import { ALGORITHM_NAMES, KEY_SCOPE_NAMES } from './limiter-names.ts'
+import { nodeState } from './node-state.ts'
 import { PipelineStrip } from './PipelineStrip.tsx'
 import { DASH, formatNumber, formatShare, panelStats } from './stats.ts'
 import './panel.css'
@@ -22,10 +23,12 @@ function Stat(props: {
   readonly value: string
   readonly unit: string
   readonly hero?: boolean
+  /** Set only while a Finding is active for this value (DESIGN.md "Stat"). */
+  readonly severity?: Severity | null
 }) {
-  const { label, value, unit, hero = false } = props
+  const { label, value, unit, hero = false, severity = null } = props
   return (
-    <div className={hero ? 'stat stat-hero' : 'stat'}>
+    <div className={hero ? 'stat stat-hero' : 'stat'} data-state={severity ?? undefined}>
       <dt className="label">{label}</dt>
       <dd className="stat-value">
         {value}
@@ -90,10 +93,16 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
           </select>
         </span>
       </header>
-      <PipelineStrip stats={stats} />
+      <PipelineStrip stats={stats} findings={variant.findings} />
       <dl className="stats" aria-label="Last 5 seconds">
         <Stat label="Offered Load" value={formatNumber(stats.offeredLoad)} unit="/s" />
-        <Stat label="Goodput" value={formatNumber(stats.goodput)} unit="/s" />
+        {/* Goodput is what a failing Backend costs, so it carries the Backend's Finding. */}
+        <Stat
+          label="Goodput"
+          value={formatNumber(stats.goodput)}
+          unit="/s"
+          severity={nodeState(variant.findings, 'backend').severity}
+        />
         <Stat label="Rejected" value={formatShare(stats.rejectedShare)} unit="%" />
         <Stat
           label={

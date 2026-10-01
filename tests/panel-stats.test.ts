@@ -89,7 +89,9 @@ describe('panelStats', () => {
       goodput: 5,
       p99: 151,
       backendUtil: 0.25,
+      // The queue filled to 9 during the second and drained to 3 by its end.
       queueDepth: 3,
+      peakQueueDepth: 9,
     }),
   ]
 
@@ -102,7 +104,7 @@ describe('panelStats', () => {
       rejectedShare: 0.25, // 15 rejected of 60 offered
       p99: 151,
       busy: 0.4, // (0.5 + 0.5 + 0.5 + 0.25 + 0.25) / 5
-      waiting: 3,
+      waiting: 9, // the most during the newest second, not the 3 left at its end
       limiterMeter: 0.9, // 9 allowed per second against a limit of 10 per second
       backendMeter: 0.4,
     })

@@ -132,18 +132,29 @@ export const VariantCharts = memo(function VariantCharts({
         ]}
       />
       <TimeSeriesChart
-        title="Requests waiting for a Backend slot"
+        title="Requests waiting for a Backend slot, and shed"
         unit=""
         nowMs={nowMs}
         series={[
           {
+            // The most during each second: one that fills and drains within it reads 0 at its end.
             id: 'queue',
-            label: 'Waiting',
+            label: 'Most waiting',
             color: 'var(--kind-backend-stroke)',
-            points: pointsOf(snapshots, (s) => s.queueDepth),
+            points: pointsOf(snapshots, (s) => s.peakQueueDepth),
+          },
+          {
+            id: 'shed',
+            label: 'Shed per second',
+            color: 'var(--danger-mark)',
+            points: pointsOf(snapshots, (s) => s.shed),
           },
         ]}
         referenceLines={[{ value: backend.queueLimit, label: 'queue limit' }]}
+        markers={variant.findings.map((finding) => ({
+          t: finding.startedAt,
+          label: finding.label.toUpperCase(),
+        }))}
       />
       <TimeSeriesChart
         title="Offered Load against Demand (per second)"

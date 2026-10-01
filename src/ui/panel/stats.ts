@@ -1,9 +1,9 @@
 /**
  * The numbers a Variant's panel shows in its stat row and pipeline strip, worked out from its
  * Snapshots without React so they are tested on their own (.scratch/panels/spec.md decisions 4
- * to 6). Every one covers the same last 5 seconds, apart from Requests waiting, which is a count
- * at one moment and so is the newest. Each is null when there is nothing to measure, which the
- * panel shows as a dash (CLAUDE.md "The one rule").
+ * to 6). Every one covers the same last 5 seconds, apart from Requests waiting: the most at any
+ * moment of the newest second. Each is null when there is nothing to measure, which the panel
+ * shows as a dash (CLAUDE.md "The one rule").
  */
 import { allowedPerSecond, type LimiterSpec, type Snapshot } from '../../sim/index.ts'
 
@@ -28,7 +28,10 @@ export interface PanelStats {
   readonly p99: number | null
   /** Fraction of Backend slot time that was busy, averaged over the same Snapshots. */
   readonly busy: number | null
-  /** Requests waiting for a Backend slot now: at the end of the newest second. */
+  /**
+   * The most Requests waiting for a Backend slot at any moment of the newest second. The count
+   * at the second's end can read 0 for a queue that overflowed and drained within it.
+   */
   readonly waiting: number | null
   /** Allowed per second against what the Limiter allows in the long run, clamped to 0 to 1. */
   readonly limiterMeter: number | null
@@ -85,7 +88,7 @@ export function panelStats(
     rejectedShare: offered === 0 ? null : sum((s) => s.rejected) / offered,
     p99: newest.p99,
     busy,
-    waiting: newest.queueDepth,
+    waiting: newest.peakQueueDepth,
     limiterMeter: clamp01(allowed / limiterCapacity(limiter, clients)),
     backendMeter: clamp01(busy),
   }

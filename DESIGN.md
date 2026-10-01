@@ -143,6 +143,8 @@ The two blocks above are the source of truth for each theme's values. In `src/ui
 **Pill.** Height 22px, radius `--r-pill`, `--surface-2`, label type. Use it for tags such as a limiter's algorithm (`TOKEN BUCKET`), `PER CLIENT` or `WARM-UP`.
 
 **Pipeline node.** A small card per stage in a Variant: Clients → Limiter → Backend. Kind `-fill` background, `--bw-strong` border in kind `-stroke`, radius `--r-md`. Top row: icon and name in `--fs-base`. Below a hairline, two or three metrics as value + label, for example `7.3% BUSY`, `151ms P99`, `0 WAITING`. The value is mono and the label is uppercase, bold, in kind `-ink`. A meter runs along the bottom edge: a `--track` track with a kind `-stroke` fill that turns `--danger-mark` when the node is failing.
+- *Struggling and failing* come only from a Finding about the node (queue overflow is the Backend's). The border turns `--warn-mark` or `--danger-mark`, the meter `--warn` (the lighter `--warn-mark` is under 3:1 on `--track`) or `--danger-mark`, and a word follows the name in label type: STRUGGLING in `--warn` or FAILING in `--danger`. While the Finding lasts, the node adds its LOST share from the Finding's evidence.
+- *Shake*: a failing node shakes about 3px sideways for 0.4 s when it turns failing, and again every 3 s while it stays failing; it is still in between, so its numbers stay readable. Off under `prefers-reduced-motion`.
 
 **Edge.** The arrow between nodes is a dashed line in `--line-2` whose dashes animate in the direction of flow. Their speed scales with the rate, and they stop when the rate is zero. The rate (`85/s`) sits above the line in mono. A failing edge turns `--danger` at half opacity.
 
@@ -215,6 +217,7 @@ Hand-drawn SVG polylines, with no chart library.
   - Offered Load: `--accent`. Demand: dashed `--line-3`, so the gap between them is the Retry Amplification.
 - **Reference lines**: the configured limit, and the Baseline p99, as dashed `--line-2` with a mono label at the right end.
 - **Boundary burst**: the main chart is **allowed Attempts in the last window**, a rolling count sampled every tenth of a window. Plotting per-second buckets would hide the 2x. When the count crosses the limit, fill the area above the limit line with `--danger-soft` and label the peak ratio (`2.0×`).
+- **Requests waiting**: plot the most waiting during each second, not the count at its end, which reads 0 for a queue that overflowed and drained within the second; beside it, Attempts shed per second in `--danger-mark`, against the queue limit.
 - **Diagnosis marker**: a vertical 1px `--danger-mark` line at the Finding's `startedAt`, with a small pill at the top naming the Failure Mode. Clicking it scrolls to the card.
 - **Warm-up**: shade the first 5 seconds with `--surface-2` and put a WARM-UP pill on it.
 - **Legend**: inline at the top-left, as a short line swatch plus a label per series. Never rely on colour alone: every series is also named in the legend and in the tooltip.
@@ -224,8 +227,9 @@ Hand-drawn SVG polylines, with no chart library.
 
 - Hover and press take `--dur-fast`; panels and cards take `--dur-base` to `--dur-slow`, using `--ease` (`--ease-out` for things entering).
 - Only `opacity` and `transform` animate (and `stroke-dashoffset` for edges).
+- The one repeating motion is a failing node's shake (see "Pipeline node"): 0.4 s of every 3 s, so it never moves for more than 5 s at a stretch.
 - Charts redraw at about 30fps with no tweening between samples. Numbers update in place; tabular figures stop them jittering.
-- Under `prefers-reduced-motion: reduce`: edge dashes stop, cards appear without sliding, and charts still update (they're data, not decoration).
+- Under `prefers-reduced-motion: reduce`: edge dashes stop, cards appear without sliding, failing nodes do not shake (the colour and the word stay), and charts still update (they're data, not decoration).
 
 ## Accessibility
 

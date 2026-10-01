@@ -146,8 +146,8 @@
   line-height: var(--lh-sm);
 }
 
-.node-value,
-.node-label {
+/* A value never breaks; a two-word label may, rather than being cut off at three columns. */
+.node-value {
   white-space: nowrap;
 }
 
@@ -222,4 +222,97 @@
   align-items: center;
   gap: var(--sp-2);
   margin-left: auto;
+}
+
+/*
+ * A struggling or failing node (DESIGN.md "Pipeline node"). Only a Finding sets data-state, and
+ * the word after the name says it too, so the state never rests on colour alone. These rules set
+ * colours directly rather than redeclaring the --k-* tokens, which only [data-kind] declares.
+ */
+.node[data-state='warn'] {
+  border-color: var(--warn-mark);
+}
+
+.node[data-state='broken'] {
+  border-color: var(--danger-mark);
+}
+
+/* --warn, not --warn-mark: the lighter mark is 2.82:1 on --track in light, under 3:1. */
+.node[data-state='warn'] .meter-fill {
+  background: var(--warn);
+}
+
+.node[data-state='broken'] .meter-fill {
+  background: var(--danger-mark);
+}
+
+.node-word {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-num);
+  letter-spacing: var(--tr-label);
+}
+
+.node[data-state='warn'] .node-word {
+  color: var(--warn);
+}
+
+.node[data-state='broken'] .node-word {
+  color: var(--danger);
+}
+
+/*
+ * A failing Backend shakes about 3px for 0.4 s when it turns broken, then again every 3 s while
+ * it stays broken: the first 0.4 s of each 3 s cycle moves, the rest is still, so the numbers
+ * on it stay readable. Only transform animates (DESIGN.md "Motion").
+ */
+.node[data-state='broken'] {
+  animation: panic 3s var(--ease) infinite;
+}
+
+@keyframes panic {
+  0%,
+  13.4%,
+  100% {
+    transform: translateX(0);
+  }
+  2.2% {
+    transform: translateX(-3px);
+  }
+  4.4% {
+    transform: translateX(3px);
+  }
+  6.7% {
+    transform: translateX(-3px);
+  }
+  8.9% {
+    transform: translateX(2px);
+  }
+  11.1% {
+    transform: translateX(-1px);
+  }
+}
+
+/* The edge into a failing node (DESIGN.md "Edge"): --danger at half opacity. */
+.edge[data-state='broken'] .edge-line {
+  border-top-color: var(--danger);
+  opacity: 0.5;
+}
+
+.edge[data-state='broken'] .edge-line::after {
+  border-left-color: var(--danger);
+}
+
+/* A stat carries its Finding's severity (DESIGN.md "Stat"). */
+.stat[data-state='warn'] .stat-value {
+  color: var(--warn);
+}
+
+.stat[data-state='broken'] .stat-value {
+  color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node[data-state='broken'] {
+    animation: none;
+  }
 }

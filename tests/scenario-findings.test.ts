@@ -60,6 +60,32 @@ describe('Scenario Findings table', () => {
     expect([sliding?.worst, token?.worst]).toEqual(['none', 'none'])
   })
 
+  it('Backend overload jumped from 60/s to 240/s: token bucket spends its saved 140 at once and fails briefly', () => {
+    // As a student drags the slider: 20 s at 60/s, so the token bucket is full, then 240/s.
+    const runner = createRunner(backendOverloadScenario, { eventBudget: Infinity })
+    while (runner.view().simMs < 20_000) runner.tick(100)
+    runner.applyControl({ kind: 'demand', demandRps: 240 })
+    const brokenSeconds = [0, 0, 0]
+    let tokenLastBroken = 0
+    // One look per simulated second (a tick moves at most FRAME_CAP_MS, so ten ticks).
+    for (let second = 21; second <= 80; second++) {
+      while (runner.view().simMs < second * 1000) runner.tick(100)
+      runner.view().variants.forEach(({ findings }, i) => {
+        if (findings.some((f) => f.severity === 'broken')) {
+          brokenSeconds[i] = (brokenSeconds[i] ?? 0) + 1
+          if (i === 2) tokenLastBroken = second
+        }
+      })
+    }
+    const [fixed, sliding, token] = brokenSeconds
+    // Fixed window fails from the jump on; sliding counter never does.
+    expect(fixed).toBeGreaterThanOrEqual(58)
+    expect(sliding).toBe(0)
+    // Token bucket fails for about 5 s (the 5 s window holding the burst), then recovers.
+    expect(token).toBeGreaterThanOrEqual(3)
+    expect(tokenLastBroken).toBeLessThanOrEqual(30)
+  })
+
   it('Edge burst at its default 4/s: the Backend copes with every burst, no Finding', () => {
     expect(worstFindings(edgeBurstScenario, 4).map((row) => row.worst)).toEqual(['none', 'none'])
   })
