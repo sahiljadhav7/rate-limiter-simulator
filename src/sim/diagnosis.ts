@@ -8,8 +8,10 @@
 import type { BackendSpec } from './backend.ts'
 import { baselineP99Ms } from './baseline.ts'
 import type { AllowedSubBuckets } from './engine.ts'
-import type { LimiterSpec } from './limiter.ts'
-import type { Snapshot } from './metrics.ts'
+import { bucketAt } from './buckets.ts'
+import type { FixedWindowSpec, LimiterSpec } from './limiter.ts'
+import { SNAPSHOT_MS, type Snapshot } from './metrics.ts'
+import { rollingWindowCounts } from './window-counts.ts'
 
 /** A named way the simulated system goes wrong. */
 export type FailureMode = 'saturation' | 'queue-overflow' | 'boundary-burst' | 'retry-storm'
@@ -144,6 +146,30 @@ export const SATURATION_BUSY_MARGIN = 0.05
  * ranges from 2.2x to 4.1x the baseline from one 5 s window to the next.
  */
 export const SATURATION_RATIO_MARGIN = 0.5
+
+/**
+ * How far over its limit a fixed window's most allowed Attempts in one window-length must be
+ * for boundary burst to become `warn` (BaseConcept: "exceed the limit by > 30%"). A sliding
+ * window counter on Edge burst peaks at 1.2x to 1.4x of the same limit (seeds 1 to 8, 120 s,
+ * .scratch/diagnosis/boundary-fixes.ts), but the rule judges fixed windows only.
+ */
+export const BOUNDARY_BURST_WARN_RATIO = 1.3
+
+/**
+ * The ratio at which boundary burst becomes `broken`: well over half a window's worth extra.
+ * Edge burst's fixed window shows 2.0x at every burst, the most a fixed window can allow.
+ */
+export const BOUNDARY_BURST_BROKEN_RATIO = 1.6
+
+/**
+ * How many windows in a row must stay at or under a threshold before boundary burst leaves
+ * that severity: 10, so no burst for 15 s. A burst is in the 5 s window for only 5 Snapshots,
+ * and Edge burst's come every 10 s, leaving 5 quiet windows between; a margin on the ratio
+ * cannot bridge that gap, because between bursts the count is the background traffic alone.
+ * Twice the gap holds the Finding through a regular rhythm of bursts and clears it once they
+ * stop.
+ */
+export const BOUNDARY_BURST_CLEAR_WINDOWS = 10
 
 /**
  * What a rule detects in one full window: the parts of a Finding that come from its numbers.
@@ -306,11 +332,11 @@ export function saturationRule(backend: BackendSpec): Rule {
           { metric: 'Busy', value: percent(busy) },
           { metric: 'p99 latency', value: ms(p99) },
           { metric: 'Baseline p99', value: ms(baseline) },
-          { metric: 'p99 / baseline', value: `${ratio.toFixed(1)}x` },
+          { metric: 'p99 / baseline', value: `${ratio.toFixed(1)}×` },
         ],
         why:
           `The Backend was busy ${percent(busy)} of the time, so Attempts waited for a slot: ` +
-          `the slowest 1 in 100 took ${ms(p99)}, ${ratio.toFixed(1)}x the ${ms(baseline)} its ` +
+          `the slowest 1 in 100 took ${ms(p99)}, ${ratio.toFixed(1)}× the ${ms(baseline)} its ` +
           `work alone takes.`,
         fixes: [
           // Ranked by what each did on the saturation fixture at 100/s, 1.25x its ceiling, seeds
@@ -330,9 +356,109 @@ export function saturationRule(backend: BackendSpec): Rule {
   }
 }
 
-/** The rules every Variant is diagnosed with. */
-export function defaultRules({ backend }: DiagnoserOptions): Rule[] {
-  return [saturationRule(backend), queueOverflowRule(backend)]
+/**
+ * The boundary burst rule, for a fixed window: allowed Attempts in any span of one
+ * window-length, sampled every sub-bucket (a tenth of a window), against the limit. It reads
+ * the same rolling count the boundary-burst chart draws.
+ *
+ * Keyed per Client, each key has its own limit but the sub-buckets count every key together,
+ * so the total is judged against the limit times the Clients seen so far. Over that, some key
+ * must have crossed an edge; one Client bursting while the others are quiet can stay under it,
+ * so the rule can miss a burst but never reports one that did not happen.
+ */
+export function boundaryBurstRule({ keyBy, limit, windowMs }: FixedWindowSpec): Rule {
+  /** The newest window-length over each threshold: its count, its end, the limit then. */
+  type Peak = {
+    readonly count: number
+    readonly at: number
+    readonly limit: number
+    readonly keys: number
+  }
+  let lastBroken: Peak | null = null
+  let lastOver: Peak | null = null
+  let quietSinceBroken = Infinity
+  let quietSinceOver = Infinity
+
+  return {
+    id: 'boundary-burst',
+    judge(window, allowed) {
+      const newest = window.at(-1)
+      if (newest === undefined) return null
+      const end = newest.t
+      const start = end - window.length * SNAPSHOT_MS
+      // Only sub-buckets that ended by this Snapshot: `allowed` may run past it.
+      const counts = allowed.counts.slice(0, bucketAt(end, allowed.bucketMs))
+      const points = rollingWindowCounts(
+        { bucketMs: allowed.bucketMs, counts },
+        windowMs,
+        end,
+        start,
+      ).filter((p) => p.t > start)
+      const keys = keyBy === 'client' ? Math.max(1, Object.keys(newest.perClient).length) : 1
+      let peak: Peak | null = null
+      for (const p of points) {
+        if (peak === null || p.v > peak.count)
+          peak = { count: p.v, at: p.t, limit: limit * keys, keys }
+      }
+      const ratio = peak === null ? 0 : peak.count / peak.limit
+      quietSinceBroken = ratio >= BOUNDARY_BURST_BROKEN_RATIO ? 0 : quietSinceBroken + 1
+      quietSinceOver = ratio > BOUNDARY_BURST_WARN_RATIO ? 0 : quietSinceOver + 1
+      if (quietSinceBroken === 0) lastBroken = peak
+      if (quietSinceOver === 0) lastOver = peak
+
+      let severity: Severity
+      let shown: Peak | null
+      if (quietSinceBroken < BOUNDARY_BURST_CLEAR_WINDOWS) {
+        severity = 'broken'
+        shown = lastBroken
+      } else if (quietSinceOver < BOUNDARY_BURST_CLEAR_WINDOWS) {
+        severity = 'warn'
+        shown = lastOver
+      } else {
+        return null
+      }
+      if (shown === null) return null
+      const over = `${(shown.count / shown.limit).toFixed(1)}×`
+      const when = `${(shown.at / 1000).toFixed(1)} s`
+      const limitText =
+        shown.keys === 1
+          ? String(shown.limit)
+          : `${shown.limit} (${limit} for each of ${shown.keys} Clients)`
+      return {
+        severity,
+        evidence: [
+          { metric: 'Most allowed in one window', value: String(shown.count) },
+          { metric: 'Limit per window', value: limitText },
+          { metric: 'Over the limit', value: over },
+          { metric: 'When', value: when },
+        ],
+        why:
+          'The fixed window starts counting from zero at each edge, so Attempts just before an ' +
+          `edge and just after it both fit: ${shown.count} got through in one window-length ` +
+          `around ${when}, ${over} the limit of ${limitText}.`,
+        fixes: [
+          // Measured on Edge burst at 4/s, seeds 1 to 8, against 10 per 1000 ms
+          // (.scratch/diagnosis/boundary-fixes.ts): a sliding window counter peaks at 1.2x to
+          // 1.4x; a token bucket of capacity 5 at 1.1x to 1.4x, but one of capacity 10 still at
+          // 1.6x to 1.9x, so the capacity has to be small. Goodput moves little (4.0 to 5.5/s),
+          // since the background traffic is under every limit.
+          { text: 'Try a sliding window counter, which still counts the window before the edge' },
+          {
+            text: 'Try a token bucket with a small capacity, such as half the limit, so a burst cannot spend a whole window at once',
+          },
+        ],
+      }
+    },
+  }
+}
+
+/** The rules every Variant is diagnosed with: boundary burst only behind a fixed window. */
+export function defaultRules({ backend, limiter }: DiagnoserOptions): Rule[] {
+  return [
+    ...(limiter.algo === 'fixed-window' ? [boundaryBurstRule(limiter)] : []),
+    saturationRule(backend),
+    queueOverflowRule(backend),
+  ]
 }
 
 /** Orders active Findings and sets their roles (D6, BaseConcept.md "Ranking and behavior"). */

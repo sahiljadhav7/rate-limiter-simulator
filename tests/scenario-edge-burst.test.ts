@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createRunner } from '../src/runner/runner.ts'
 import { checkScenario } from '../src/runner/scenario.ts'
-import { rollingWindowCounts } from '../src/ui/chart/geometry.ts'
+import { rollingWindowCounts } from '../src/sim/window-counts.ts'
 import { edgeBurstScenario } from '../src/ui/scenarios/edge-burst.ts'
 
 /**

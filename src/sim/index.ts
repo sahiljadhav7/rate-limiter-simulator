@@ -56,6 +56,7 @@ export {
   type TrafficSourceOptions,
 } from './traffic-source.ts'
 export { baselineP99Ms } from './baseline.ts'
+export { rollingWindowCounts } from './window-counts.ts'
 export {
   createDiagnoser,
   DIAGNOSIS_WINDOW_SNAPSHOTS,

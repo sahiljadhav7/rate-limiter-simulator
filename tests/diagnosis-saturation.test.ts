@@ -131,12 +131,12 @@ describe('the saturation rule', () => {
         { metric: 'Busy', value: '98.0%' },
         { metric: 'p99 latency', value: '806 ms' },
         { metric: 'Baseline p99', value: '230 ms' },
-        { metric: 'p99 / baseline', value: '3.5x' },
+        { metric: 'p99 / baseline', value: '3.5×' },
       ],
     })
     expect(finding?.why).toBe(
       'The Backend was busy 98.0% of the time, so Attempts waited for a slot: the slowest 1 in ' +
-        '100 took 806 ms, 3.5x the 230 ms its work alone takes.',
+        '100 took 806 ms, 3.5× the 230 ms its work alone takes.',
     )
     expect(finding?.fixes.map((fix) => fix.text)).toEqual([
       'Try more Backend slots',

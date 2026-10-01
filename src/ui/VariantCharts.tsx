@@ -1,8 +1,13 @@
 import { memo } from 'react'
 import type { VariantView } from '../runner/runner.ts'
 import type { VariantConfig } from '../runner/scenario.ts'
-import { limiterWindow, type BackendSpec, type Snapshot } from '../sim/index.ts'
-import { rollingWindowCounts, timeDomain, visibleSnapshots, type Point } from './chart/geometry.ts'
+import {
+  limiterWindow,
+  rollingWindowCounts,
+  type BackendSpec,
+  type Snapshot,
+} from '../sim/index.ts'
+import { timeDomain, visibleSnapshots, type Point } from './chart/geometry.ts'
 import { TimeSeriesChart } from './chart/TimeSeriesChart.tsx'
 import { ALGORITHM_NAMES } from './panel/limiter-names.ts'
 import { limiterCapacity } from './panel/stats.ts'
