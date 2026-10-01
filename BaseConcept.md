@@ -299,7 +299,7 @@ interface Scenario {
   models: string;            // what it models
   leavesOut: string;         // what it leaves out
   seed: number;
-  traffic: TrafficSpec[];    // constant | poisson | bursty | greedy
+  traffic: TrafficSpec;      // one spec; its clients and greedy describe several Clients
   controls?: ControlEvent[]; // scripted load (ramp, spike, step)
   scriptedArrivals?: { atMs: number; count: number; clientId?: ClientId }[]; // e.g. Edge Burst
   backend: { slots: number; queueLimit: number; meanMs: number; cv: number };
@@ -310,9 +310,7 @@ interface VariantConfig {
   label: string;
   limiter: LimiterSpec;
   retry: RetryPolicy;
-  nodes?: number;
-  store?: 'local' | 'shared';
-  storeLatencyMs?: number;
+  // RS-13 (stretch) adds: nodes?: number; store?: 'local' | 'shared'; storeLatencyMs?: number
 }
 
 interface Snapshot {
@@ -459,6 +457,7 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
 
 ## Epic 3: Runner and UI
 - **RS-15 Scenario schema + Runner [Core]** (1.5h): builds one engine per Variant of a `Scenario`, shares the traffic source (including scripted arrivals), advances in lockstep, enforces the per-frame event budget. *Depends on RS-4b, RS-6.*
+  - *Note (2026-10-01):* `Scenario.traffic` is one `TrafficSpec`, and `VariantConfig` leaves out the distributed fields until RS-13 (`.scratch/runner/spec.md` decisions 3 and 4). Measured at 1,000 rps with three Variants: about 870,000 events per second of wall time under Bun, so 10x speed at 60 fps needs about 1,800 events, 2 ms, per frame. The default budget of 20,000 events is about 23 ms at that rate, longer than one 16.7 ms frame (ticket 04 of `.scratch/runner/`).
   - *AC:* pause, resume, reset and speed control work; the shared stream is identical across Variants; exceeding the budget slows the sim and shows a notice instead of freezing the tab.
 - **RS-16 Time-series chart component [Core]** (2h): hand-drawn SVG showing allowed vs rejected, latency percentiles, queue depth; supports vertical event markers. **First 1h slice (raw polyline for one scenario) is pulled into day 1 as an integration smoke test.**
   - *AC:* renders 10 minutes of sim data at 60fps without lag.
