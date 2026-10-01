@@ -137,5 +137,7 @@ describe('createEventQueue property: random pushes and pops', () => {
       expect(pops, `seed ${seed}: pops`).toBe(pushes)
       expect(pushes, `seed ${seed}: pushes`).toBeGreaterThan(OPERATIONS / 3)
     }
-  })
+    // About 1.2 s alone, but it ran past Vitest's 5 s default in the full parallel suite on a
+    // busy machine. The time limit is not what this tests, so it gets room.
+  }, 30_000)
 })
