@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import type { Finding, Severity } from '../../sim/index.ts'
-import { nodeState, type NodeState } from './node-state.ts'
+import type { Severity } from '../../sim/index.ts'
+import type { NodeState } from './node-state.ts'
 import { DASH, formatNumber, formatShare, type PanelStats } from './stats.ts'
 
 /** A pipeline node's kind, which picks its colours through the `[data-kind]` rules. */
@@ -99,10 +99,10 @@ function Edge(props: {
  */
 export function PipelineStrip(props: {
   readonly stats: PanelStats
-  readonly findings: readonly Finding[]
+  /** The Backend node's state, from the Variant's Findings. */
+  readonly backend: NodeState
 }) {
-  const { stats, findings } = props
-  const backend = nodeState(findings, 'backend')
+  const { stats, backend } = props
   return (
     <ol
       className="pipeline"

@@ -71,11 +71,11 @@ describe('the queue overflow rule', () => {
         { metric: 'Lost', value: '6.0%' },
         { metric: 'Shed', value: '300' },
         { metric: 'Timed out', value: '0' },
-        { metric: 'Allowed', value: '5000' },
+        { metric: 'Sent to the Backend', value: '5000' },
       ],
     })
     expect(finding?.why).toBe(
-      'The queue of 20 filled, so 300 Attempts were dropped and 0 timed out: 6.0% of what the Limiter let through.',
+      'The queue of 20 filled, so 300 Attempts were shed and 0 timed out: 6.0% of what the Limiter let through.',
     )
     expect(finding?.fixes.map((fix) => fix.text)).toEqual([
       'Try a Limiter that spreads Attempts evenly (sliding window counter or token bucket)',

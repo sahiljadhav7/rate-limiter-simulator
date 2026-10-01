@@ -51,7 +51,8 @@ function ScenarioRun(props: {
     [restartWith, scenario],
   )
   return (
-    <div className="page">
+    // A paused run stops a failing node shaking too: the shake is the only thing that moves.
+    <div className="page" data-paused={view.paused || undefined}>
       <header className="top-bar">
         {/* Share and the menu (RS-21) go after these. */}
         <div className="island top-bar-name">

@@ -63,6 +63,7 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
   const headingId = useId()
   const retryId = useId()
   const stats = panelStats(variant.snapshots, config.limiter, clients)
+  const backendState = nodeState(variant.findings, 'backend')
   return (
     <section
       className="island panel"
@@ -93,7 +94,7 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
           </select>
         </span>
       </header>
-      <PipelineStrip stats={stats} findings={variant.findings} />
+      <PipelineStrip stats={stats} backend={backendState} />
       <dl className="stats" aria-label="Last 5 seconds">
         <Stat label="Offered Load" value={formatNumber(stats.offeredLoad)} unit="/s" />
         {/* Goodput is what a failing Backend costs, so it carries the Backend's Finding. */}
@@ -101,7 +102,7 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
           label="Goodput"
           value={formatNumber(stats.goodput)}
           unit="/s"
-          severity={nodeState(variant.findings, 'backend').severity}
+          severity={backendState.severity}
         />
         <Stat label="Rejected" value={formatShare(stats.rejectedShare)} unit="%" />
         <Stat

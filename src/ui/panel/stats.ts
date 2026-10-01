@@ -1,7 +1,7 @@
 /**
  * The numbers a Variant's panel shows in its stat row and pipeline strip, worked out from its
  * Snapshots without React so they are tested on their own (.scratch/panels/spec.md decisions 4
- * to 6). Every one covers the same last 5 seconds, apart from Requests waiting: the most at any
+ * to 6). Every one covers the same last 5 seconds, apart from Attempts waiting: the most at any
  * moment of the newest second. Each is null when there is nothing to measure, which the panel
  * shows as a dash (CLAUDE.md "The one rule").
  */
@@ -29,7 +29,7 @@ export interface PanelStats {
   /** Fraction of Backend slot time that was busy, averaged over the same Snapshots. */
   readonly busy: number | null
   /**
-   * The most Requests waiting for a Backend slot at any moment of the newest second. The count
+   * The most Attempts waiting for a Backend slot at any moment of the newest second. The count
    * at the second's end can read 0 for a queue that overflowed and drained within it.
    */
   readonly waiting: number | null

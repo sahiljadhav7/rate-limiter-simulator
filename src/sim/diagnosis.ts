@@ -24,7 +24,10 @@ export interface Finding {
   /** A Cause is a design mistake; a Symptom is what it does to the system. */
   readonly kind: 'cause' | 'symptom'
   readonly severity: Severity
-  /** When it first appeared, in ms of simulated time: the end of that Snapshot. */
+  /**
+   * When it first appeared, in ms of simulated time: the end of that Snapshot. A Finding that
+   * goes from warn to broken keeps the time it first went amber.
+   */
   readonly startedAt: number
   /** The numbers behind it, as shown. */
   readonly evidence: readonly { readonly metric: string; readonly value: string }[]
@@ -110,6 +113,7 @@ export function createDiagnoser({ queueLimit }: DiagnoserOptions): Diagnoser {
       const sent = sum((s) => s.allowed + s.delayed)
       const shed = sum((s) => s.shed)
       const timedOut = sum((s) => s.attemptsTimedOut)
+      // With nothing sent for 5 s nothing can be lost, so there is no share and no Finding.
       const share = sent === 0 ? null : (shed + timedOut) / sent
       const next = nextSeverity(severity, share)
       if (next !== null && severity === null) startedAt = snapshot.t
@@ -128,10 +132,10 @@ export function createDiagnoser({ queueLimit }: DiagnoserOptions): Diagnoser {
           { metric: 'Lost', value: percent(share) },
           { metric: 'Shed', value: String(shed) },
           { metric: 'Timed out', value: String(timedOut) },
-          { metric: 'Allowed', value: String(sent) },
+          { metric: 'Sent to the Backend', value: String(sent) },
         ],
         why:
-          `The queue of ${queueLimit} filled, so ${shed} Attempts were dropped and ${timedOut} ` +
+          `The queue of ${queueLimit} filled, so ${shed} Attempts were shed and ${timedOut} ` +
           `timed out: ${percent(share)} of what the Limiter let through.`,
         fixes: [
           {

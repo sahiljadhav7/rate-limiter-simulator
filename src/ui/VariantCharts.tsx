@@ -132,7 +132,7 @@ export const VariantCharts = memo(function VariantCharts({
         ]}
       />
       <TimeSeriesChart
-        title="Requests waiting for a Backend slot, and shed"
+        title="Attempts waiting for a Backend slot, and shed"
         unit=""
         nowMs={nowMs}
         series={[

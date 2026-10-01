@@ -261,15 +261,20 @@
 }
 
 /*
- * A failing Backend shakes about 3px for 0.4 s when it turns broken, then again every 3 s while
- * it stays broken: the first 0.4 s of each 3 s cycle moves, the rest is still, so the numbers
- * on it stay readable. Only transform animates (DESIGN.md "Motion").
+ * A failing node shakes about 3px for 0.4 s when it turns broken, then again every 3 s while it
+ * stays broken: the first 0.4 s of each 3 s cycle moves, the rest is still, so the numbers on it
+ * stay readable. Only transform animates (DESIGN.md "Motion"). Pausing the run stops it, so
+ * there is always a way to make it stop (WCAG 2.2.2).
  */
 .node[data-state='broken'] {
-  animation: panic 3s var(--ease) infinite;
+  animation: shake 3s var(--ease) infinite;
 }
 
-@keyframes panic {
+.page[data-paused] .node[data-state='broken'] {
+  animation: none;
+}
+
+@keyframes shake {
   0%,
   13.4%,
   100% {
