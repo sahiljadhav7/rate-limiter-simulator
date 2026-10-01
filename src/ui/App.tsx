@@ -1,6 +1,7 @@
 import { useCallback, useState, type CSSProperties } from 'react'
 import type { Scenario } from '../runner/scenario.ts'
 import { demandAt } from './controls/demand.ts'
+import { withRetryMode, withVariantRetry, type RetryMode } from './controls/retry-options.ts'
 import { TopBarControls } from './controls/TopBarControls.tsx'
 import { edgeBurstScenario } from './edge-burst-scenario.ts'
 import { ledgerLine, SLOWER_NOTICE } from './ledger.ts'
@@ -25,6 +26,13 @@ export function App() {
   )
   const onSeed = useCallback(
     (seed: number) => restartWith({ ...scenario, seed }),
+    [restartWith, scenario],
+  )
+  const onRetryMode = useCallback(
+    (index: number, mode: RetryMode) => {
+      const retry = scenario.variants[index]?.retry
+      if (retry) restartWith(withVariantRetry(scenario, index, withRetryMode(retry, mode)))
+    },
     [restartWith, scenario],
   )
   return (
@@ -56,6 +64,8 @@ export function App() {
               backend={scenario.backend}
               clients={scenario.traffic.clients.length}
               nowMs={view.simMs}
+              index={i}
+              onRetryMode={onRetryMode}
             />
           ) : null
         })}

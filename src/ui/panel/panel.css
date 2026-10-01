@@ -215,3 +215,27 @@
   border-right: 0;
   border-left: 6px solid var(--line-2);
 }
+
+/* The Retry Policy dropdown, at the end of the header. Changing it restarts the run. */
+.retry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+
+.retry-select {
+  height: 32px;
+  padding: 0 var(--sp-2);
+  border: var(--bw) solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.retry-select:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}

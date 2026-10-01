@@ -2,6 +2,7 @@ import { memo, useId, type CSSProperties, type ReactNode } from 'react'
 import type { VariantView } from '../../runner/runner.ts'
 import type { VariantConfig } from '../../runner/scenario.ts'
 import type { BackendSpec } from '../../sim/index.ts'
+import { RETRY_MODES, type RetryMode } from '../controls/retry-options.ts'
 import { CHART_ROWS, VariantCharts } from '../VariantCharts.tsx'
 import { ALGORITHM_NAMES, KEY_SCOPE_NAMES } from './limiter-names.ts'
 import { PipelineStrip } from './PipelineStrip.tsx'
@@ -43,6 +44,10 @@ export interface VariantPanelProps {
   readonly clients: number
   /** The current simulated time, in ms. */
   readonly nowMs: number
+  /** This Variant's place in the Scenario, passed back with a Retry Policy change. */
+  readonly index: number
+  /** Switches Variant `index` to `mode`, which restarts the run. */
+  readonly onRetryMode: (index: number, mode: RetryMode) => void
 }
 
 /**
@@ -51,8 +56,9 @@ export interface VariantPanelProps {
  * diagnosis card (RS-26) goes after the charts.
  */
 export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps) {
-  const { variant, config, backend, clients, nowMs } = props
+  const { variant, config, backend, clients, nowMs, index, onRetryMode } = props
   const headingId = useId()
+  const retryId = useId()
   const stats = panelStats(variant.snapshots, config.limiter, clients)
   return (
     <section
@@ -65,6 +71,24 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
         <h2 id={headingId}>{config.label}</h2>
         <span className="pill">{ALGORITHM_NAMES[config.limiter.algo]}</span>
         <span className="pill">{KEY_SCOPE_NAMES[config.limiter.keyBy]}</span>
+        <span className="retry">
+          <label className="label" htmlFor={retryId}>
+            Retry Policy
+          </label>
+          <select
+            id={retryId}
+            className="retry-select"
+            value={config.retry.retry}
+            title="Changing it restarts the run from 0"
+            onChange={(event) => onRetryMode(index, event.currentTarget.value as RetryMode)}
+          >
+            {RETRY_MODES.map(({ mode, name }) => (
+              <option key={mode} value={mode}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </span>
       </header>
       <PipelineStrip stats={stats} />
       <dl className="stats" aria-label="Last 5 seconds">
