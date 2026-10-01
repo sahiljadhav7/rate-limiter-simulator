@@ -87,13 +87,38 @@
   stroke-linejoin: round;
 }
 
-.chart-marker line {
+.chart-marker {
   stroke: var(--danger-mark);
   stroke-width: 1;
 }
 
-.chart-marker text {
-  fill: var(--danger);
+/* A Finding's pill on the top chart (DESIGN.md "Charts" diagnosis marker): a button to its card. */
+.chart-marker-pill {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: var(--bw) solid var(--danger-mark);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--danger);
+  font: inherit;
+  font-size: var(--fs-label);
+  font-weight: var(--fw-med);
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chart-marker-pill:hover {
+  background: var(--danger-soft);
+}
+
+.chart-marker-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .chart-warm-up > rect:first-child {
@@ -121,10 +146,6 @@
 .chart-pill {
   fill: var(--surface);
   stroke: var(--border);
-}
-
-.chart-marker .chart-pill {
-  stroke: var(--danger-mark);
 }
 
 .chart-box {

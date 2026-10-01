@@ -221,3 +221,22 @@ export function hoverAt(
     }),
   }
 }
+
+/**
+ * Which row each marker pill goes on, so pills close in time do not cover each other: the
+ * first row whose last pill ends `gapPx` or more before this one starts. `pills` are in order
+ * of x, in px.
+ */
+export function pillLanes(
+  pills: readonly { readonly x: number; readonly width: number }[],
+  gapPx: number,
+): number[] {
+  /** Where each row's last pill ends. */
+  const ends: number[] = []
+  return pills.map(({ x, width }) => {
+    let lane = ends.findIndex((end) => end + gapPx <= x)
+    if (lane === -1) lane = ends.length
+    ends[lane] = x + width
+    return lane
+  })
+}

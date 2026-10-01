@@ -70,6 +70,8 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
     <section
       className="island panel"
       id={panelId}
+      // Focusable from script: an ended Finding's marker pill moves here.
+      tabIndex={-1}
       aria-labelledby={headingId}
       style={{ '--panel-rows': PANEL_ROWS } as CSSProperties}
       data-testid="variant"
@@ -125,6 +127,7 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
         backend={backend}
         clients={clients}
         nowMs={nowMs}
+        panelId={panelId}
       />
       <DiagnosisSlot findings={variant.findings} panelId={panelId} />
     </section>

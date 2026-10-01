@@ -349,6 +349,8 @@
   color: var(--text-dim);
 }
 
+/* A marker pill moves focus to a card, or to the panel once its Finding has ended. */
+.panel:focus-visible,
 .diagnosis-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

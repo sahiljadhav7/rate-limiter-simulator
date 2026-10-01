@@ -11,6 +11,7 @@ import { timeDomain, visibleSnapshots, type Point } from './chart/geometry.ts'
 import { TimeSeriesChart } from './chart/TimeSeriesChart.tsx'
 import { ALGORITHM_NAMES } from './panel/limiter-names.ts'
 import { limiterCapacity } from './panel/stats.ts'
+import { findingMarkers } from './panel/diagnosis-card.ts'
 
 /** One value of every visible Snapshot, at the end of the second it covers. */
 function pointsOf(snapshots: readonly Snapshot[], pick: (s: Snapshot) => number | null): Point[] {
@@ -35,6 +36,8 @@ export interface VariantChartsProps {
   readonly clients: number
   /** The current simulated time, in ms. */
   readonly nowMs: number
+  /** The panel's id: a marker's pill scrolls to the panel, or to a card whose id starts with it. */
+  readonly panelId: string
 }
 
 /**
@@ -48,10 +51,14 @@ export const VariantCharts = memo(function VariantCharts({
   backend,
   clients,
   nowMs,
+  panelId,
 }: VariantChartsProps) {
   const snapshots = visibleSnapshots(variant.snapshots, nowMs)
   const limiterWindowSpec = limiterWindow(config.limiter)
   const [start] = timeDomain(nowMs)
+  // Every chart marks where each Finding started, active or past, so the lines line up down
+  // the panel; only the top chart carries the pills.
+  const markers = findingMarkers(variant.findings, variant.pastFindings, panelId)
   return (
     <>
       {limiterWindowSpec ? (
@@ -59,6 +66,8 @@ export const VariantCharts = memo(function VariantCharts({
           title={BOUNDARY_TITLE}
           unit=""
           nowMs={nowMs}
+          markers={markers}
+          markerPills
           series={[
             {
               id: 'rolling',
@@ -88,6 +97,9 @@ export const VariantCharts = memo(function VariantCharts({
         title="Attempts per second"
         unit="per second"
         nowMs={nowMs}
+        markers={markers}
+        // Without a window there is no boundary-burst chart, so this is the top chart.
+        markerPills={limiterWindowSpec === null}
         series={[
           {
             id: 'allowed',
@@ -114,6 +126,7 @@ export const VariantCharts = memo(function VariantCharts({
         title="How long Attempts took (milliseconds, last 5 seconds)"
         unit="milliseconds"
         nowMs={nowMs}
+        markers={markers}
         series={[
           {
             id: 'p50',
@@ -156,15 +169,13 @@ export const VariantCharts = memo(function VariantCharts({
           },
         ]}
         referenceLines={[{ value: backend.queueLimit, label: 'queue limit' }]}
-        markers={variant.findings.map((finding) => ({
-          t: finding.startedAt,
-          label: finding.label.toUpperCase(),
-        }))}
+        markers={markers}
       />
       <TimeSeriesChart
         title="Offered Load against Demand (per second)"
         unit="per second"
         nowMs={nowMs}
+        markers={markers}
         series={[
           {
             id: 'offered',

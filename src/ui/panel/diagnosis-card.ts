@@ -2,7 +2,7 @@
  * What the diagnosis card shows that can be worked out without React (spec decisions 11 and
  * 13): its words, when it needs to re-render, and what a screen reader hears.
  */
-import type { FailureMode, Finding, Severity } from '../../sim/index.ts'
+import type { FailureMode, Finding, PastFinding, Severity } from '../../sim/index.ts'
 
 /** The pill: shown in label type, which uppercases it. */
 export const ROLE_NAMES: Readonly<Record<Finding['role'], string>> = {
@@ -57,4 +57,34 @@ export function announcement(findings: readonly Finding[]): string {
 /** The card's element id, which a chart marker scrolls to. */
 export function findingAnchorId(panelId: string, mode: FailureMode): string {
   return `${panelId}-${mode}`
+}
+
+/** Where a Finding started, as a chart marks it, and where its pill takes the reader. */
+export interface FindingMarker {
+  /** `startedAt`, in ms of simulated time. */
+  readonly t: number
+  readonly label: string
+  /** The card's id while the Finding is active; the panel's once it has ended. */
+  readonly targetId: string
+  readonly ended: boolean
+}
+
+/**
+ * A marker for every active and past Finding, oldest first (spec decision 10): a burst that
+ * came and went still leaves its line.
+ */
+export function findingMarkers(
+  active: readonly Finding[],
+  past: readonly PastFinding[],
+  panelId: string,
+): FindingMarker[] {
+  return [
+    ...past.map((f) => ({ t: f.startedAt, label: f.label, targetId: panelId, ended: true })),
+    ...active.map((f) => ({
+      t: f.startedAt,
+      label: f.label,
+      targetId: findingAnchorId(panelId, f.id),
+      ended: false,
+    })),
+  ].sort((a, b) => a.t - b.t)
 }

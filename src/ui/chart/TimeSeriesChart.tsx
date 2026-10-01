@@ -8,6 +8,7 @@ import {
   linearScale,
   niceMax,
   peakRatio,
+  pillLanes,
   timeDomain,
   toAreas,
   toPolylines,
@@ -40,6 +41,8 @@ export interface Marker {
   /** Simulated time, in ms. */
   readonly t: number
   readonly label: string
+  /** The element its pill scrolls to and focuses, such as the Finding's card. */
+  readonly targetId: string
 }
 
 /** Fills the area of one series above a limit, and labels its peak as a multiple of the limit. */
@@ -57,6 +60,8 @@ export interface TimeSeriesChartProps {
   readonly series: readonly Series[]
   readonly referenceLines?: readonly ReferenceLine[]
   readonly markers?: readonly Marker[]
+  /** Whether this chart carries the markers' pills: only the top chart of a panel does. */
+  readonly markerPills?: boolean
   readonly overLimit?: OverLimit
   /** Unit for the summary read by screen readers, such as "per second" or "milliseconds". */
   readonly unit: string
@@ -86,6 +91,24 @@ function pillWidth(text: string): number {
   return text.length * PILL_CHAR_PX + PILL_PADDING_PX
 }
 
+/** A marker pill's height and the step between rows of them, in px. */
+const MARKER_PILL_HEIGHT = 18
+const MARKER_PILL_STEP = 21
+/** The least space between two pills on one row, in px. */
+const MARKER_PILL_GAP = 4
+
+/**
+ * Scrolls to the element `id` and moves focus there, so a keyboard user lands on what the
+ * pill named. Smooth unless the reader asked for reduced motion.
+ */
+function goTo(id: string): void {
+  const target = document.getElementById(id)
+  if (target === null) return
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'nearest' })
+  target.focus({ preventScroll: true })
+}
+
 /** The newest non-null value of a series, or null if it has none yet. */
 function latest(points: readonly Point[]): number | null {
   for (let i = points.length - 1; i >= 0; i--) {
@@ -110,7 +133,16 @@ function asText(value: number | null, missing: string): string {
  * markers, the warm-up shaded, and an `aria-label` saying what it shows now.
  */
 export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesChartProps) {
-  const { title, nowMs, series, referenceLines = [], markers = [], overLimit, unit } = props
+  const {
+    title,
+    nowMs,
+    series,
+    referenceLines = [],
+    markers = [],
+    markerPills = false,
+    overLimit,
+    unit,
+  } = props
   const clipId = useId()
   const [measureRef, measuredWidth] = useElementWidth<HTMLElement>()
   /** Null until the figure has been measured: then nothing is drawn, rather than NaN. */
@@ -147,6 +179,15 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
   const peakText =
     ratio !== null && ratio > 1 ? `peak ${formatRatio(ratio)} the limit in the last 60 s` : null
 
+  const visibleMarkers = markers.filter((m) => m.t >= domain[0] && m.t <= domain[1])
+  // A pill sits right of its line, or left of it when it would run past the plot.
+  const pills = visibleMarkers.map((m) => {
+    const width = pillWidth(m.label)
+    const right = x(m.t) + 3
+    return { marker: m, width, x: right + width <= plotRight ? right : x(m.t) - 3 - width }
+  })
+  const lanes = pillLanes(pills, MARKER_PILL_GAP)
+
   const hover =
     hoverPx === null ? null : hoverAt(series, linearScale([0, plotRight], domain)(hoverPx))
   const hoverX = hover === null ? 0 : x(hover.t)
@@ -173,7 +214,8 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
     series.map((s) => `${s.label} ${asText(latest(s.points), 'no value')}`).join(', ') +
     (unit ? ` ${unit}` : '') +
     referenceLines.map((line) => `; ${line.label} ${asText(line.value, 'no value')}`).join('') +
-    (peakText ? `; ${peakText}` : '')
+    (peakText ? `; ${peakText}` : '') +
+    visibleMarkers.map((m) => `; ${m.label} started at ${(m.t / 1000).toFixed(1)} s`).join('')
 
   return (
     <figure className="chart" ref={measureRef}>
@@ -279,29 +321,41 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
                 />
               )),
             )}
-            {markers
-              .filter((m) => m.t >= domain[0] && m.t <= domain[1])
-              .map((m) => (
-                <g key={`${m.t}-${m.label}`} className="chart-marker">
-                  <line x1={x(m.t)} x2={x(m.t)} y1="0" y2={HEIGHT} />
-                  <rect
-                    className="chart-pill"
-                    x={x(m.t) + 3}
-                    y={TOP}
-                    width={pillWidth(m.label)}
-                    height={PILL_HEIGHT}
-                    rx={PILL_HEIGHT / 2}
-                  />
-                  <text x={x(m.t) + 3 + PILL_PADDING_PX / 2} y={TOP + 9.5}>
-                    {m.label}
-                  </text>
-                </g>
-              ))}
+            {visibleMarkers.map((m) => (
+              <line
+                key={`${m.t}-${m.label}`}
+                className="chart-marker"
+                x1={x(m.t)}
+                x2={x(m.t)}
+                y1="0"
+                y2={HEIGHT}
+              />
+            ))}
             {hover ? (
               <line className="chart-crosshair" x1={hoverX} x2={hoverX} y1="0" y2={HEIGHT} />
             ) : null}
           </svg>
         ) : null}
+        {/* HTML, not SVG: a control inside role="img" is hidden from screen readers. */}
+        {layout && markerPills
+          ? pills.map(({ marker, width: pillPx, x: left }, i) => (
+              <button
+                key={`${marker.t}-${marker.label}`}
+                type="button"
+                className="chart-marker-pill"
+                style={{
+                  left: `${(left / width) * 100}%`,
+                  top: TOP + (lanes[i] ?? 0) * MARKER_PILL_STEP,
+                  width: pillPx,
+                  height: MARKER_PILL_HEIGHT,
+                }}
+                aria-label={`${marker.label}, started at ${(marker.t / 1000).toFixed(1)} s`}
+                onClick={() => goTo(marker.targetId)}
+              >
+                {marker.label}
+              </button>
+            ))
+          : null}
         {hover ? (
           <div
             className="chart-tooltip"
