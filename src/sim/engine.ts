@@ -83,6 +83,15 @@ export interface Totals {
   readonly wastedWorkMs: number
 }
 
+/**
+ * Allowed Attempts per sub-bucket since 0: `counts[i]` covers [i x bucketMs, (i + 1) x
+ * bucketMs).
+ */
+export interface AllowedSubBuckets {
+  readonly bucketMs: number
+  readonly counts: readonly number[]
+}
+
 /** One Variant's simulation. */
 export interface Engine {
   /**
@@ -94,11 +103,13 @@ export interface Engine {
   totals(): Totals
   /** One Snapshot per whole simulated second so far, oldest first. */
   snapshots(): readonly Snapshot[]
+  /** Allowed Attempts per sub-bucket since 0. */
+  allowedSubBuckets(): AllowedSubBuckets
   /**
-   * Allowed Attempts per sub-bucket since 0: `counts[i]` covers [i x bucketMs, (i + 1) x
-   * bucketMs).
+   * How many events it has handled since 0: new Requests read from the traffic log and
+   * events popped from its queue. The runner's per-frame budget counts these. Only reads.
    */
-  allowedSubBuckets(): { readonly bucketMs: number; readonly counts: readonly number[] }
+  eventsHandled(): number
 }
 
 /** A new Request, followed across its Attempts. */
@@ -151,6 +162,7 @@ export function createEngine(options: EngineOptions): Engine {
   let nextSampleMs = SNAPSHOT_MS
   let arrivals: Arrival[] = []
   let nextArrival = 0
+  let handled = 0
 
   /**
    * Attempt counts only the engine sees. Everything the Snapshots also count (Requests,
@@ -357,6 +369,7 @@ export function createEngine(options: EngineOptions): Engine {
         const nextMs = Math.min(eventMs, arrivalMs)
         if (nextMs > untilMs) break
         sampleUpTo(nextMs)
+        handled++
         if (event !== undefined && eventMs <= arrivalMs) {
           queue.pop()
           clock.advanceTo(eventMs)
@@ -375,6 +388,9 @@ export function createEngine(options: EngineOptions): Engine {
     },
     allowedSubBuckets() {
       return { bucketMs: subBucketMs, counts: metrics.allowedSubBuckets() }
+    },
+    eventsHandled() {
+      return handled
     },
     totals() {
       const counted = metrics.totals()

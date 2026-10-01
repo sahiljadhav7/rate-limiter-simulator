@@ -75,6 +75,34 @@ const tenPerSecond: TrafficSpec = { shape: 'constant', demandRps: 10, clients: [
 const scriptedOnly: TrafficSpec = { shape: 'constant', demandRps: 0, clients: ['a'] }
 
 describe('createEngine', () => {
+  it('counts every event it handles: arrivals, service ends, timeouts', () => {
+    // Three Requests at 100 ms into one 20 ms slot: served at 120, 140 and 160 ms. A timeout
+    // is still handled after its Attempt finished, at 100 + 1000 ms.
+    const source = createTrafficSource({
+      spec: scriptedOnly,
+      stream: createRandomStream(1),
+      scriptedArrivals: [{ atMs: 100, count: 3 }],
+    })
+    const engine = createEngine({
+      traffic: source.reader(),
+      limiter: allowAll(),
+      retry: noRetry,
+      backend: quickBackend,
+      streams: createStreams(1),
+    })
+    const handledBy = (untilMs: number) => {
+      source.advanceTo(untilMs)
+      engine.advanceTo(untilMs)
+      return engine.eventsHandled()
+    }
+    expect(handledBy(99)).toBe(0)
+    expect(handledBy(100)).toBe(3)
+    expect(handledBy(140)).toBe(5)
+    expect(handledBy(1099)).toBe(6)
+    expect(handledBy(1100)).toBe(9)
+    expect(handledBy(5000)).toBe(9)
+  })
+
   it('sends every new Request through the Limiter to the Backend and counts it', () => {
     // Arrivals at 100, 200, ..., 10000 ms; each is served in exactly 20 ms.
     const engine = run({ traffic: tenPerSecond }, [10_000])
@@ -611,7 +639,9 @@ describe('createEngine', () => {
         expect(chunked.totals()).toEqual(once.totals())
         expect(chunked.snapshots()).toEqual(once.snapshots())
         expect(chunked.allowedSubBuckets()).toEqual(once.allowedSubBuckets())
+        expect(chunked.eventsHandled()).toBe(once.eventsHandled())
       }
+      expect(once.eventsHandled()).toBeGreaterThan(0)
     })
 
     it('takes retry waits from the jitter stream: another jitter seed alone changes the run', () => {
@@ -647,9 +677,11 @@ describe('createEngine', () => {
         source.advanceTo(stop)
         watched.advanceTo(stop)
         watched.totals()
+        watched.eventsHandled()
       }
       expect(watched.snapshots()).toEqual(quiet.snapshots())
       expect(watched.totals()).toEqual(quiet.totals())
+      expect(watched.eventsHandled()).toBe(quiet.eventsHandled())
     })
 
     it('has Snapshots that add up to the totals', () => {
