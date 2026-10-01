@@ -4,6 +4,13 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-3) var(--sp-5);
+  /*
+   * Takes the room between the name and Share and wraps inside it, so the three islands keep
+   * one row (DESIGN.md "Top bar"); a basis of 0 stops its full width pushing Share to a row of
+   * its own.
+   */
+  flex: 1 1 0;
+  min-width: min(100%, 320px);
 }
 
 .btn {

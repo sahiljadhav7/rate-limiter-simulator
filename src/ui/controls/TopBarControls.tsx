@@ -14,19 +14,25 @@ const SLIDER_STEPS = 1000
 /**
  * The Demand slider (DESIGN.md "Slider (Demand)"): a native range on a log scale from 1 to 1,000
  * Requests per second, with the Demand in effect beside it. While the thumb moves it shows the
- * value asked for; the run applies it on the next frame.
+ * value asked for; the run applies it on the next frame. `onRelease` hears the Demand it was
+ * left at, once per drag or key press.
  */
 function DemandSlider(props: {
   readonly demandRps: number
   readonly onChange: (demandRps: number) => void
+  readonly onRelease: (demandRps: number) => void
 }) {
-  const { demandRps, onChange } = props
+  const { demandRps, onChange, onRelease } = props
   const id = useId()
   /** The position being dragged, or null: the run's Demand lags a frame behind the thumb. */
   const [draft, setDraft] = useState<number | null>(null)
   const position = draft ?? positionFromDemand(demandRps)
   const shown = draft === null ? demandRps : demandFromPosition(draft)
-  const release = () => setDraft(null)
+  const release = () => {
+    if (draft === null) return
+    setDraft(null)
+    onRelease(demandFromPosition(draft))
+  }
   return (
     <div className="demand">
       <label className="demand-readout" htmlFor={id}>
@@ -118,6 +124,8 @@ export interface TopBarControlsProps {
   readonly seed: number
   /** Restarts the run with this seed. */
   readonly onSeed: (seed: number) => void
+  /** The Demand the slider was released at, in Requests per second. */
+  readonly onDemandRelease: (demandRps: number) => void
 }
 
 /**
@@ -126,10 +134,14 @@ export interface TopBarControlsProps {
  * change when simulated time moves, or restart the run.
  */
 export const TopBarControls = memo(function TopBarControls(props: TopBarControlsProps) {
-  const { controls, demandRps, paused, speed, seed, onSeed } = props
+  const { controls, demandRps, paused, speed, seed, onSeed, onDemandRelease } = props
   return (
     <div className="island top-bar-controls" role="group" aria-label="Controls">
-      <DemandSlider demandRps={demandRps} onChange={controls.setDemand} />
+      <DemandSlider
+        demandRps={demandRps}
+        onChange={controls.setDemand}
+        onRelease={onDemandRelease}
+      />
       <div className="button-group" role="group" aria-label="Playback">
         <button
           type="button"

@@ -1,0 +1,24 @@
+/* The top bar's right island: Share (DESIGN.md "Top bar"). Colours are tokens. */
+.top-bar-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  /* Pushed to the right end of the top bar, on whatever row it lands. */
+  margin-left: auto;
+}
+
+.share-link {
+  width: 32ch;
+  max-width: 100%;
+  font-family: var(--mono);
+}
+
+.share-message {
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.share-message:empty {
+  display: none;
+}
