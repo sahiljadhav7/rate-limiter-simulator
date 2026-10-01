@@ -55,6 +55,7 @@ export {
   type TrafficSource,
   type TrafficSourceOptions,
 } from './traffic-source.ts'
+export { baselineP99Ms } from './baseline.ts'
 export {
   createDiagnoser,
   DIAGNOSIS_WINDOW_SNAPSHOTS,

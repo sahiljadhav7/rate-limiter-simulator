@@ -93,7 +93,7 @@ function unitGamma(shape: number, stream: RandomStream): number {
  * asked mean and cv. Gamma is always positive and its right tail grows with cv, which is how
  * real service times look. cv 0 takes exactly the mean and makes no draw.
  */
-function serviceTimeMs(spec: BackendSpec, stream: RandomStream): number {
+export function serviceTimeMs(spec: BackendSpec, stream: RandomStream): number {
   if (spec.cv === 0) return spec.meanMs
   const cvSquared = spec.cv * spec.cv
   return spec.meanMs * cvSquared * unitGamma(1 / cvSquared, stream)
