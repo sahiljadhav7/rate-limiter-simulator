@@ -4,7 +4,7 @@ Ratescale is a rate-limiting simulator for students. The same seeded traffic run
 
 It is for anyone who has read "a token bucket refills at N per second" and wants to see what that means when traffic arrives in bursts. You do not need a queueing theory course; every number on the page is explained in plain words.
 
-**Live:** not deployed yet. The link goes here once the Vercel project is connected (see [Deploying](#deploying)).
+**Live:** [rate-limiter-simulator-zeta.vercel.app](https://rate-limiter-simulator-zeta.vercel.app/). Try [Backend overload at 30 Requests per second](https://rate-limiter-simulator-zeta.vercel.app/?s=backend-overload&seed=1&d=30&r=none.none), where the sliding window counter's Backend fails.
 
 ![Backend overload: Demand is dragged from 10 to 40 Requests per second, and the sliding window counter's Backend turns red and starts losing Attempts while the token bucket's stays blue](docs/backend-overload.gif)
 
