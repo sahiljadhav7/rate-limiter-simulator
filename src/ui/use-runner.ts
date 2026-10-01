@@ -1,8 +1,31 @@
 import { useEffect, useState } from 'react'
-import { createRunner, type Runner, type RunnerView } from '../runner/runner.ts'
+import { createRunner, type Runner, type RunnerView, type Speed } from '../runner/runner.ts'
 import type { Scenario } from '../runner/scenario.ts'
+import type { ControlChange } from '../sim/index.ts'
+import { createPendingDemand } from './controls/pending-demand.ts'
 import { createFrameClock } from './frame-clock.ts'
 import { createSlowdownHold } from './ledger.ts'
+
+/**
+ * What the burst button does (.scratch/controls/spec.md decision 2): 5x Demand for 2 s, enough
+ * to take the Edge burst Scenario's 4 per second to twice its limit of 10.
+ */
+export const BURST: ControlChange = { kind: 'burst', multiplier: 5, durationMs: 2000 }
+
+/** What the controls call. Each is made once, so passing them down never re-renders a child. */
+export interface RunnerControls {
+  /** Asks for a new Demand, applied before the next frame's tick; the newest in a frame wins. */
+  setDemand(demandRps: number): void
+  burst(): void
+  play(): void
+  pause(): void
+  /** One simulated second, while paused. */
+  step(): void
+  reset(): void
+  setSpeed(speed: Speed): void
+  /** Starts the edited Scenario from 0, with the live changes replayed. */
+  restart(scenario: Scenario): void
+}
 
 /**
  * Runs `scenario` in the browser: one runner for the component's lifetime, ticked every
@@ -12,15 +35,27 @@ import { createSlowdownHold } from './ledger.ts'
  *
  * The Scenario is read once; a new Scenario needs a new component (a `key`). The runner is
  * made once by a lazy `useState`, which keeps it for the component's lifetime as a ref would,
- * and is returned for the controls (RS-18) to call. `slower` says whether to show the ledger's
+ * and is returned for tests and measurement; the controls call `controls`. `slower` says whether to show the ledger's
  * RUNNING SLOWER THAN REQUESTED, from every frame rather than only the published ones.
  */
 export function useRunner(scenario: Scenario): {
   readonly view: RunnerView
   readonly runner: Runner
+  readonly controls: RunnerControls
   readonly slower: boolean
 } {
   const [runner] = useState(() => createRunner(scenario))
+  const [pending] = useState(createPendingDemand)
+  const [controls] = useState<RunnerControls>(() => ({
+    setDemand: (demandRps) => pending.set(demandRps),
+    burst: () => runner.applyControl(BURST),
+    play: () => runner.resume(),
+    pause: () => runner.pause(),
+    step: () => runner.step(),
+    reset: () => runner.reset(),
+    setSpeed: (speed) => runner.setSpeed(speed),
+    restart: (next) => runner.restart(next),
+  }))
   const [view, setView] = useState(() => runner.view())
   const [slower, setSlower] = useState(false)
 
@@ -33,7 +68,11 @@ export function useRunner(scenario: Scenario): {
     // hidden time; restarting on every visibility change makes that frame count 0 instead.
     const restart = () => clock.restart()
     document.addEventListener('visibilitychange', restart)
+    // The view is published about 30 times a second even while paused, so a control pressed
+    // then shows within a frame or two without publishing on its own.
     let frame = requestAnimationFrame(function onFrame(nowMs) {
+      const demandRps = pending.take()
+      if (demandRps !== null) runner.applyControl({ kind: 'demand', demandRps })
       hold.frame(nowMs, runner.tick(clock.step(nowMs, document.visibilityState === 'visible')))
       if (clock.shouldPublish(nowMs)) {
         setView(runner.view())
@@ -45,7 +84,7 @@ export function useRunner(scenario: Scenario): {
       cancelAnimationFrame(frame)
       document.removeEventListener('visibilitychange', restart)
     }
-  }, [runner])
+  }, [runner, pending])
 
-  return { view, runner, slower }
+  return { view, runner, controls, slower }
 }
