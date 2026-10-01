@@ -69,6 +69,8 @@ export interface RunnerView {
   readonly speed: Speed
   /** The last frame hit the event budget: the run is going slower than the speed asked for. */
   readonly behind: boolean
+  /** Events handled since 0, summed over every Variant: what the ledger counts. */
+  readonly eventsHandled: number
   /** Every load change so far, scripted and live. Seed plus this replays the run. */
   readonly timeline: readonly ControlEvent[]
   readonly variants: readonly VariantView[]
@@ -212,6 +214,7 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
         paused,
         speed,
         behind,
+        eventsHandled: eventsHandled(),
         timeline: run.source.timeline(),
         variants: run.variants.map(({ config, engine }) => ({
           label: config.label,

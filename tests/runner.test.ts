@@ -99,7 +99,7 @@ function runDirectly(s: Scenario, untilMs: number) {
   })
 }
 
-/** `runDirectly` without the event counts, which the runner's view does not report. */
+/** `runDirectly` without the per-Variant event counts, which the runner's view only reports summed. */
 const resultsDirectly = (s: Scenario, untilMs: number) =>
   runDirectly(s, untilMs).map(({ snapshots, totals, allowedSubBuckets }) => ({
     snapshots,
@@ -123,6 +123,26 @@ describe('createRunner', () => {
 
   it('throws a RangeError for an invalid Scenario', () => {
     expect(() => createRunner({ ...scenario, variants: [] })).toThrow(RangeError)
+  })
+})
+
+describe('eventsHandled', () => {
+  it('is 0 at the start, and the sum over every Variant of the same run done directly', () => {
+    const runner = createRunner(scenario, UNLIMITED)
+    expect(runner.view().eventsHandled).toBe(0)
+    tickTo(runner, 6000)
+    const direct = runDirectly(scenario, 6000).map((v) => v.eventsHandled)
+    // Each Variant handles a different number, so a total from one Variant would not match.
+    expect(new Set(direct).size).toBeGreaterThan(1)
+    expect(runner.view().eventsHandled).toBe(direct.reduce((sum, n) => sum + n, 0))
+  })
+
+  it('goes back to 0 on reset', () => {
+    const runner = createRunner(scenario, UNLIMITED)
+    tickTo(runner, 2000)
+    expect(runner.view().eventsHandled).toBeGreaterThan(0)
+    runner.reset()
+    expect(runner.view().eventsHandled).toBe(0)
   })
 })
 
