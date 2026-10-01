@@ -4,6 +4,7 @@ import {
   createLimiter,
   type FixedWindowSpec,
   type LimiterSpec,
+  type SlidingCounterSpec,
   type TokenBucketSpec,
 } from '../src/sim/limiter.ts'
 import { createRandomStream, createStreams } from '../src/sim/rng.ts'
@@ -253,46 +254,215 @@ describe('token bucket', () => {
   })
 })
 
-describe('at a window edge', () => {
-  /**
-   * Edge Burst through one engine: 30 Requests just before the edge at 1000 ms and 30 just
-   * after. Returns the most allowed within any one-second window-length (as the boundary-burst
-   * chart plots them, from 100 ms sub-buckets), the allowed count of each of the first two
-   * one-second windows, and the totals.
-   */
-  function edgeBurst(spec: LimiterSpec) {
-    const source = createTrafficSource({
-      spec: { shape: 'constant', demandRps: 0, clients: ['a'] },
-      stream: createStreams(1).traffic,
-      scriptedArrivals: [
-        { atMs: 950, count: 30 },
-        { atMs: 1050, count: 30 },
-      ],
-    })
-    const engine = createEngine({
-      traffic: source.reader(),
-      limiter: createLimiter(spec),
-      retry: { timeoutMs: 1000, retry: 'none', maxAttempts: 1 },
-      backend: { slots: 20, queueLimit: 100, meanMs: 20, cv: 0 },
-      streams: createStreams(1),
-      subBucketMs: 100,
-    })
-    source.advanceTo(3000)
-    engine.advanceTo(3000)
-    const { counts } = engine.allowedSubBuckets()
-    const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0)
-    const lastWindow = counts.map((_, i) => sum(counts.slice(Math.max(0, i - 9), i + 1)))
-    return {
-      mostInAWindowLength: Math.max(...lastWindow),
-      firstWindow: sum(counts.slice(0, 10)),
-      secondWindow: sum(counts.slice(10, 20)),
-      totals: engine.totals(),
-    }
+describe('sliding window counter', () => {
+  // 4 per window-length, windows of 1000 ms: every weight below is a whole number of quarters.
+  const spec: SlidingCounterSpec = {
+    algo: 'sliding-counter',
+    keyBy: 'global',
+    limit: 4,
+    windowMs: 1000,
   }
+
+  it('allows the limit in a window, then waits until the estimate has room', () => {
+    const limiter = createLimiter(spec)
+    for (const t of [0, 100, 200, 300]) expect(limiter.decide('a', t)).toEqual(allow)
+    // Window 0 is full. In window 1 its 4 count for 4 x (1 - e / 1000), so the next Attempt
+    // fits once that is 3 or less: 250 ms into window 1.
+    expect(limiter.decide('a', 300)).toEqual(reject(950))
+    expect(limiter.decide('a', 1249)).toEqual(reject(1))
+    expect(limiter.decide('a', 1250)).toEqual(allow)
+    // Now 1 is allowed in window 1, so the previous window must weigh 2 or less: at 500 ms.
+    expect(limiter.decide('a', 1250)).toEqual(reject(250))
+    expect(limiter.decide('a', 1500)).toEqual(allow)
+    expect(limiter.decide('a', 1750)).toEqual(allow)
+    // With 3 allowed, the previous window must weigh nothing: the end of window 1.
+    expect(limiter.decide('a', 1750)).toEqual(reject(250))
+    expect(limiter.decide('a', 2000)).toEqual(allow)
+  })
+
+  it('weighs the previous window by how much of it still overlaps the last window-length', () => {
+    const limiter = createLimiter({ ...spec, limit: 10 })
+    for (let i = 0; i < 10; i++) expect(limiter.decide('a', 50)).toEqual(allow)
+    // Halfway through window 1 the 10 from window 0 count as 5, so 5 more fit and a sixth
+    // waits until 600 ms in. All 10 came at 50 ms, more than a window-length ago, but the
+    // counter cannot tell: it assumes they were spread evenly over window 0.
+    for (let i = 0; i < 5; i++) expect(limiter.decide('a', 1500)).toEqual(allow)
+    expect(limiter.decide('a', 1500)).toEqual(reject(100))
+  })
+
+  it('forgets a window once a whole window has passed without an Attempt', () => {
+    const limiter = createLimiter(spec)
+    for (const t of [0, 100, 200, 300]) limiter.decide('a', t)
+    // Window 1 had no Attempts, so in window 2 the previous window counts 0: the full limit fits.
+    for (let i = 0; i < 4; i++) expect(limiter.decide('a', 2000)).toEqual(allow)
+    expect(limiter.decide('a', 2000)).toEqual(reject(1250))
+  })
+
+  it('shares one count between Clients when keyed globally, and has one per Client when keyed by client', () => {
+    const global = createLimiter(spec)
+    for (const clientId of ['a', 'b', 'c', 'd']) expect(global.decide(clientId, 0)).toEqual(allow)
+    expect(global.decide('e', 0)).toEqual(reject(1250))
+
+    const perClient = createLimiter({ ...spec, keyBy: 'client' })
+    for (let i = 0; i < 4; i++) perClient.decide('a', 0)
+    expect(perClient.decide('a', 0)).toEqual(reject(1250))
+    // b's count is its own, and still empty.
+    for (let i = 0; i < 4; i++) expect(perClient.decide('b', 0)).toEqual(allow)
+    expect(perClient.decide('b', 0)).toEqual(reject(1250))
+  })
+
+  it('forgets every count on reset', () => {
+    const limiter = createLimiter({ ...spec, keyBy: 'client' })
+    for (let i = 0; i < 4; i++) limiter.decide('a', 0)
+    limiter.reset()
+    // Without the reset, window 0's 4 would still weigh 3 at 1250 ms and leave room for 1.
+    for (let i = 0; i < 4; i++) expect(limiter.decide('a', 1250)).toEqual(allow)
+  })
+
+  it.each(['global', 'client'] as const)(
+    'allows exactly when the estimate has room, and never more than limit x (1 + time into the window / window length), keyed %s',
+    (keyBy) => {
+      // Attempts come on average every 3.5 ms from three Clients, about 71 per 250 ms window in
+      // all and 24 from each, with a quiet spell now and then. Each limit is near its key's
+      // mean, so windows fill up often and the previous window's weight matters.
+      const windowMs = 250
+      const limit = keyBy === 'global' ? 71 : 24
+      const limiter = createLimiter({ algo: 'sliding-counter', keyBy, limit, windowMs })
+      const random = createRandomStream(9)
+      const clients = ['a', 'b', 'c']
+      /** Per key: when each allowed Attempt was decided, in order, and how many per window. */
+      const allowedAt = new Map<string, number[]>()
+      const perWindow = new Map<string, Map<number, number>>()
+      let rejects = 0
+      let wrong = 0
+      /**
+       * Window k is [k x 250, (k + 1) x 250). Worked out here by plain division, not with
+       * bucketAt, so the test does not borrow the code it checks; with a whole-number window
+       * the division does not round across an edge.
+       */
+      const windowOf = (time: number) => Math.floor(time / windowMs)
+      let t = 0
+      for (let i = 0; i < 20_000; i++) {
+        t += random.next() < 0.002 ? 600 : random.next() * 7
+        const clientId = clients[Math.floor(random.next() * clients.length)] ?? 'a'
+        const key = keyBy === 'client' ? clientId : 'all'
+        const counts = perWindow.get(key) ?? new Map<number, number>()
+        perWindow.set(key, counts)
+        // The estimate, from the test's own record.
+        const k = windowOf(t)
+        const prev = counts.get(k - 1) ?? 0
+        const curr = counts.get(k) ?? 0
+        const estimate = prev * (1 - (t - k * windowMs) / windowMs) + curr
+        const decision = limiter.decide(clientId, t)
+        // One expect per decision costs seconds; count disagreements and assert once.
+        if (decision.kind !== (estimate + 1 <= limit ? 'allow' : 'reject')) wrong++
+        if (decision.kind === 'allow') {
+          counts.set(k, curr + 1)
+          const times = allowedAt.get(key) ?? []
+          allowedAt.set(key, times)
+          times.push(t)
+        } else {
+          rejects++
+        }
+      }
+      expect(wrong).toBe(0)
+      // Each window on its own allows at most the limit.
+      for (const counts of perWindow.values()) {
+        expect(Math.max(...counts.values())).toBeLessThanOrEqual(limit)
+      }
+      // Across an edge, the window-length ending at each allowed Attempt holds at most
+      // limit x (1 + time into its window / window length): near the limit just after an edge,
+      // where fixed window allows 2x.
+      let mostOverBound = 0
+      let mostOverLimit = 0
+      for (const times of allowedAt.values()) {
+        let from = 0
+        times.forEach((at, i) => {
+          while ((times[from] ?? at) <= at - windowMs) from++
+          const inSpan = i - from + 1
+          const intoWindowMs = at - windowOf(at) * windowMs
+          const bound = limit * (1 + intoWindowMs / windowMs)
+          mostOverBound = Math.max(mostOverBound, inSpan / bound)
+          mostOverLimit = Math.max(mostOverLimit, inSpan / limit)
+        })
+      }
+      expect(mostOverBound).toBeLessThanOrEqual(1 + 1e-9)
+      // The bound was nearly reached, so the check is not vacuous, and the counter did go over
+      // the limit within a window-length: it is an estimate, not an exact sliding limit.
+      expect(mostOverBound).toBeGreaterThan(0.95)
+      expect(mostOverLimit).toBeGreaterThan(1)
+      // Many were rejected (seed 9: 1,001 global, 2,239 per client), so "allows exactly when"
+      // was tested on both outcomes. The threshold sits well below both counts.
+      expect(rejects).toBeGreaterThan(500)
+    },
+  )
+
+  it.each<[string, Partial<SlidingCounterSpec>]>([
+    ['a limit of 0', { limit: 0 }],
+    ['a fractional limit', { limit: 2.5 }],
+    ['an infinite limit', { limit: Infinity }],
+    ['a window of 0 ms', { windowMs: 0 }],
+    ['a NaN window', { windowMs: NaN }],
+    ['an infinite window', { windowMs: Infinity }],
+  ])('throws a RangeError for %s', (_, change) => {
+    expect(() => createLimiter({ ...spec, ...change })).toThrow(RangeError)
+  })
+})
+
+/**
+ * Runs scripted arrivals from one Client through one engine with `spec`'s Limiter. Returns the
+ * most allowed within any one-second window-length (as the boundary-burst chart plots them,
+ * from 100 ms sub-buckets), the allowed count of each of the first two one-second windows,
+ * and the totals.
+ */
+function allowedThroughEngine(
+  spec: LimiterSpec,
+  scriptedArrivals: readonly { readonly atMs: number; readonly count: number }[],
+) {
+  const source = createTrafficSource({
+    spec: { shape: 'constant', demandRps: 0, clients: ['a'] },
+    stream: createStreams(1).traffic,
+    scriptedArrivals,
+  })
+  const engine = createEngine({
+    traffic: source.reader(),
+    limiter: createLimiter(spec),
+    retry: { timeoutMs: 1000, retry: 'none', maxAttempts: 1 },
+    backend: { slots: 20, queueLimit: 100, meanMs: 20, cv: 0 },
+    streams: createStreams(1),
+    subBucketMs: 100,
+  })
+  source.advanceTo(3000)
+  engine.advanceTo(3000)
+  const { counts } = engine.allowedSubBuckets()
+  const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0)
+  const lastWindow = counts.map((_, i) => sum(counts.slice(Math.max(0, i - 9), i + 1)))
+  return {
+    mostInAWindowLength: Math.max(...lastWindow),
+    firstWindow: sum(counts.slice(0, 10)),
+    secondWindow: sum(counts.slice(10, 20)),
+    totals: engine.totals(),
+  }
+}
+
+/** The same long-run rate, 10 per second, for each algorithm. */
+const tenPerSecond = {
+  fixedWindow: { algo: 'fixed-window', keyBy: 'global', limit: 10, windowMs: 1000 },
+  tokenBucket: { algo: 'token-bucket', keyBy: 'global', capacity: 10, refillPerSec: 10 },
+  slidingCounter: { algo: 'sliding-counter', keyBy: 'global', limit: 10, windowMs: 1000 },
+} satisfies Record<string, LimiterSpec>
+
+describe('at a window edge', () => {
+  /** Edge Burst: 30 Requests just before the edge at 1000 ms and 30 just after. */
+  const edgeBurst = (spec: LimiterSpec) =>
+    allowedThroughEngine(spec, [
+      { atMs: 950, count: 30 },
+      { atMs: 1050, count: 30 },
+    ])
 
   it('fixed window lets through about 2x its limit within one window-length', () => {
     // 10 per 1000 ms window, and the window resets between the two halves of the burst.
-    const run = edgeBurst({ algo: 'fixed-window', keyBy: 'global', limit: 10, windowMs: 1000 })
+    const run = edgeBurst(tenPerSecond.fixedWindow)
     expect(run.mostInAWindowLength).toBe(20)
     // Each fixed window on its own stayed within the limit.
     expect(run.firstWindow).toBe(10)
@@ -305,9 +475,42 @@ describe('at a window edge', () => {
   it('token bucket with the same long-run rate does not: the second half finds the bucket empty', () => {
     // 10 tokens, 10 per second: the same 10 per second as the fixed window above. The first
     // half spends the full bucket at 950 ms; by 1050 ms one token has come back.
-    const run = edgeBurst({ algo: 'token-bucket', keyBy: 'global', capacity: 10, refillPerSec: 10 })
+    const run = edgeBurst(tenPerSecond.tokenBucket)
     expect(run.mostInAWindowLength).toBe(11)
     expect(run.totals.attempts).toMatchObject({ offered: 60, allowed: 11, rejected: 49 })
+  })
+
+  it('sliding window counter does not either: just after the edge the full window before still counts', () => {
+    // 50 ms into window 1, window 0's 10 still weigh 9.5, so nothing more fits until 100 ms in.
+    const run = edgeBurst(tenPerSecond.slidingCounter)
+    expect(run.mostInAWindowLength).toBe(10)
+    expect(run.totals.attempts).toMatchObject({ offered: 60, allowed: 10, rejected: 50 })
+  })
+})
+
+describe('after an early burst and a quiet spell', () => {
+  // 30 Requests at 50 ms, then 30 halfway through the next window, at 1500 ms.
+  const earlyThenMidWindow = (spec: LimiterSpec) =>
+    allowedThroughEngine(spec, [
+      { atMs: 50, count: 30 },
+      { atMs: 1500, count: 30 },
+    ])
+
+  it('fixed window and token bucket allow a full 10 again at 1500 ms', () => {
+    // The fixed window reset at 1000 ms; the token bucket has refilled since 1050 ms.
+    for (const spec of [tenPerSecond.fixedWindow, tenPerSecond.tokenBucket]) {
+      const run = earlyThenMidWindow(spec)
+      expect(run.totals.attempts).toMatchObject({ offered: 60, allowed: 20, rejected: 40 })
+    }
+  })
+
+  it('sliding window counter allows only 5: it still counts half of the earlier window', () => {
+    // The counter assumes window 0's 10 were spread evenly, so halfway through window 1 they
+    // weigh 5, although all of them came more than a window-length ago.
+    const run = earlyThenMidWindow(tenPerSecond.slidingCounter)
+    expect(run.firstWindow).toBe(10)
+    expect(run.secondWindow).toBe(5)
+    expect(run.totals.attempts).toMatchObject({ offered: 60, allowed: 15, rejected: 45 })
   })
 })
 
@@ -318,6 +521,18 @@ describe('retry after', () => {
   it.each<[string, LimiterSpec, number]>([
     ['fixed window', { algo: 'fixed-window', keyBy: 'global', limit: 1, windowMs: 100 / 3 }, 60],
     ['token bucket', { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 7 }, 250],
+    // A limit of 3 mostly waits inside a window, for the previous window's weight to fall; a
+    // limit of 1 always waits for the next window.
+    [
+      'sliding window counter, waiting within the window',
+      { algo: 'sliding-counter', keyBy: 'global', limit: 3, windowMs: 100 / 3 },
+      20,
+    ],
+    [
+      'sliding window counter, waiting for the next window',
+      { algo: 'sliding-counter', keyBy: 'global', limit: 1, windowMs: 100 / 3 },
+      60,
+    ],
   ])(
     'is exact: an Attempt at now + retryAfterMs is allowed, and one just before is not (%s)',
     (_, spec, stepMs) => {

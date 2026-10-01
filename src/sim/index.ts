@@ -21,6 +21,7 @@ export {
   type Limiter,
   type LimiterDecision,
   type LimiterSpec,
+  type SlidingCounterSpec,
   type TokenBucketSpec,
 } from './limiter.ts'
 export type { Snapshot } from './metrics.ts'

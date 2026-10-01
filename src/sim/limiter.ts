@@ -55,8 +55,24 @@ export interface TokenBucketSpec {
   readonly refillPerSec: number
 }
 
+/**
+ * Sliding window counter: each key may have about `limit` Attempts allowed per window-length,
+ * estimated from two fixed windows (the same edges as fixed window). `e` ms into a window, the
+ * estimate is prev x (1 - e / windowMs) + curr: all of this window's count, and the part of
+ * the previous window's count that still overlaps, as if its Attempts were spread evenly. An
+ * Attempt is allowed when the estimate plus it is `limit` or less.
+ */
+export interface SlidingCounterSpec {
+  readonly algo: 'sliding-counter'
+  readonly keyBy: KeyBy
+  /** Attempts allowed per window-length, per key: a whole number, 1 or more. */
+  readonly limit: number
+  /** The window length, in ms. */
+  readonly windowMs: number
+}
+
 /** What a Variant's Limiter is built from. Each algorithm adds its own member. */
-export type LimiterSpec = FixedWindowSpec | TokenBucketSpec
+export type LimiterSpec = FixedWindowSpec | TokenBucketSpec | SlidingCounterSpec
 
 /** The key an Attempt from `clientId` counts against: its Client, or one key for all. */
 function keyFor(keyBy: KeyBy, clientId: ClientId): string {
@@ -70,6 +86,8 @@ export function createLimiter(spec: LimiterSpec): Limiter {
       return createFixedWindow(spec)
     case 'token-bucket':
       return createTokenBucket(spec)
+    case 'sliding-counter':
+      return createSlidingCounter(spec)
   }
 }
 
@@ -128,6 +146,52 @@ function createTokenBucket(spec: TokenBucketSpec): Limiter {
     },
     reset() {
       fullAt.clear()
+    },
+  }
+}
+
+function createSlidingCounter(spec: SlidingCounterSpec): Limiter {
+  const { keyBy, limit, windowMs } = spec
+  checkWholeNumber(limit, 1, "A sliding window counter's limit")
+  checkPositive(windowMs, "A sliding window counter's length in ms")
+  /** Per key: the window `curr` belongs to, Attempts allowed in it, and in the one before. */
+  const counts = new Map<string, { window: number; curr: number; prev: number }>()
+
+  /**
+   * The earliest time the next Attempt is allowed, in ms. Solving prev x (1 - e / windowMs) +
+   * curr + 1 <= limit for e gives e >= windowMs x (prev - (limit - 1 - curr)) / prev. Kept as a
+   * time, like the token bucket, so the decision and the retry time cannot disagree. With
+   * `curr` at the limit only the next window has room, where `curr` becomes the previous count.
+   */
+  function nextAllowedAt(window: number, curr: number, prev: number): number {
+    if (curr >= limit) {
+      return bucketStart(window + 1, windowMs) + (windowMs * (curr - (limit - 1))) / curr
+    }
+    const room = limit - 1 - curr
+    if (prev <= room) return bucketStart(window, windowMs)
+    return bucketStart(window, windowMs) + (windowMs * (prev - room)) / prev
+  }
+
+  return {
+    decide(clientId, nowMs) {
+      const window = bucketAt(nowMs, windowMs)
+      const key = keyFor(keyBy, clientId)
+      let entry = counts.get(key)
+      if (entry === undefined) {
+        entry = { window, curr: 0, prev: 0 }
+        counts.set(key, entry)
+      } else if (entry.window !== window) {
+        entry.prev = entry.window === window - 1 ? entry.curr : 0
+        entry.window = window
+        entry.curr = 0
+      }
+      const at = nextAllowedAt(window, entry.curr, entry.prev)
+      if (nowMs < at) return { kind: 'reject', retryAfterMs: at - nowMs }
+      entry.curr++
+      return { kind: 'allow' }
+    },
+    reset() {
+      counts.clear()
     },
   }
 }
