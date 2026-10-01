@@ -7,6 +7,7 @@ import {
   checkRetryPolicy,
   createLimiter,
   createStreams,
+  limiterWindow,
   createTrafficSource,
   type BackendSpec,
   type ControlEvent,
@@ -109,11 +110,6 @@ const WINDOWLESS_SUB_BUCKET_MS = 100
  * uses 100 ms.
  */
 export function subBucketMsFor(limiter: LimiterSpec): number {
-  switch (limiter.algo) {
-    case 'fixed-window':
-    case 'sliding-counter':
-      return limiter.windowMs / SUB_BUCKETS_PER_WINDOW
-    case 'token-bucket':
-      return WINDOWLESS_SUB_BUCKET_MS
-  }
+  const window = limiterWindow(limiter)
+  return window === null ? WINDOWLESS_SUB_BUCKET_MS : window.windowMs / SUB_BUCKETS_PER_WINDOW
 }

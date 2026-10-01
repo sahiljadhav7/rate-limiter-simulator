@@ -74,6 +74,31 @@ export interface SlidingCounterSpec {
 /** What a Variant's Limiter is built from. Each algorithm adds its own member. */
 export type LimiterSpec = FixedWindowSpec | TokenBucketSpec | SlidingCounterSpec
 
+/**
+ * The window a Limiter counts Attempts in, with its limit, or null for one without a window
+ * (token bucket). The boundary-burst chart is drawn only for a Limiter with a window.
+ */
+export function limiterWindow(spec: LimiterSpec): { limit: number; windowMs: number } | null {
+  switch (spec.algo) {
+    case 'fixed-window':
+    case 'sliding-counter':
+      return { limit: spec.limit, windowMs: spec.windowMs }
+    case 'token-bucket':
+      return null
+  }
+}
+
+/** The Attempts a Limiter allows per second in the long run, per key. */
+export function allowedPerSecond(spec: LimiterSpec): number {
+  switch (spec.algo) {
+    case 'fixed-window':
+    case 'sliding-counter':
+      return (spec.limit * 1000) / spec.windowMs
+    case 'token-bucket':
+      return spec.refillPerSec
+  }
+}
+
 /** The key an Attempt from `clientId` counts against: its Client, or one key for all. */
 function keyFor(keyBy: KeyBy, clientId: ClientId): string {
   return keyBy === 'client' ? clientId : ''

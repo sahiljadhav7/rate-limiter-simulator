@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createEngine } from '../src/sim/engine.ts'
 import {
+  allowedPerSecond,
+  limiterWindow,
   createLimiter,
   type FixedWindowSpec,
   type LimiterSpec,
@@ -556,4 +558,30 @@ describe('retry after', () => {
       expect(rejects).toBeGreaterThan(10_000)
     },
   )
+})
+
+describe('what the charts read from a Limiter spec', () => {
+  it('gives the window a Limiter counts in, and none for token bucket', () => {
+    expect(
+      limiterWindow({ algo: 'fixed-window', keyBy: 'global', limit: 10, windowMs: 1000 }),
+    ).toEqual({ limit: 10, windowMs: 1000 })
+    expect(
+      limiterWindow({ algo: 'sliding-counter', keyBy: 'client', limit: 3, windowMs: 250 }),
+    ).toEqual({ limit: 3, windowMs: 250 })
+    expect(
+      limiterWindow({ algo: 'token-bucket', keyBy: 'global', capacity: 10, refillPerSec: 5 }),
+    ).toBeNull()
+  })
+
+  it('gives the long-run Attempts allowed per second, per key', () => {
+    expect(
+      allowedPerSecond({ algo: 'fixed-window', keyBy: 'global', limit: 60, windowMs: 500 }),
+    ).toBe(120)
+    expect(
+      allowedPerSecond({ algo: 'sliding-counter', keyBy: 'global', limit: 10, windowMs: 1000 }),
+    ).toBe(10)
+    expect(
+      allowedPerSecond({ algo: 'token-bucket', keyBy: 'global', capacity: 60, refillPerSec: 40 }),
+    ).toBe(40)
+  })
 })

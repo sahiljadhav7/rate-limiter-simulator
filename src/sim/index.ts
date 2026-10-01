@@ -22,7 +22,9 @@ export {
 } from './engine.ts'
 export { createEventQueue, type EventQueue, type ScheduledEvent } from './event-queue.ts'
 export {
+  allowedPerSecond,
   createLimiter,
+  limiterWindow,
   type FixedWindowSpec,
   type KeyBy,
   type Limiter,
@@ -31,7 +33,7 @@ export {
   type SlidingCounterSpec,
   type TokenBucketSpec,
 } from './limiter.ts'
-export type { Snapshot } from './metrics.ts'
+export { WARM_UP_MS, type Snapshot } from './metrics.ts'
 export { checkRetryPolicy, type RetryPolicy } from './retry-policy.ts'
 export {
   createStreams,
