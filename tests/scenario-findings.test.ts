@@ -57,6 +57,17 @@ type Row = readonly [
 const none = { modes: {}, roots: [] }
 const overflow = { modes: { 'queue-overflow': 'broken' }, roots: ['queue-overflow'] }
 const burst = { modes: { 'boundary-burst': 'broken' }, roots: ['boundary-burst'] }
+const storm = { modes: { 'retry-storm': 'broken' }, roots: ['retry-storm'] }
+const stormAndOverflow = {
+  modes: { 'retry-storm': 'broken', 'queue-overflow': 'broken' },
+  roots: ['retry-storm'],
+}
+// The first burst's rejected half retries at once, inside the first full window, so the storm
+// starts a second before the boundary burst and is the earlier Cause (D6).
+const stormAndBurst = {
+  modes: { 'retry-storm': 'broken', 'boundary-burst': 'broken' },
+  roots: ['retry-storm'],
+}
 
 /**
  * Every Scenario at its default Demand and at 3x, as is and with "Retry at once" and "Back off
@@ -68,15 +79,16 @@ const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 10, 'immediate', [none, none]],
   ['Backend overload', backendOverloadScenario, 10, 'backoff-jitter', [none, none]],
   ['Backend overload', backendOverloadScenario, 30, undefined, [overflow, none]],
-  ['Backend overload', backendOverloadScenario, 30, 'immediate', [overflow, none]],
+  // Retries at once: a storm in both, the Root Cause; the token bucket's Backend copes.
+  ['Backend overload', backendOverloadScenario, 30, 'immediate', [stormAndOverflow, storm]],
   ['Backend overload', backendOverloadScenario, 30, 'backoff-jitter', [overflow, none]],
   // Fixed window first: a boundary burst at every Edge Burst, the Root Cause. The sliding
   // window counter has no window edge reset, and the Backend copes with what it allows.
   ['Edge burst', edgeBurstScenario, 4, undefined, [burst, none]],
-  ['Edge burst', edgeBurstScenario, 4, 'immediate', [burst, none]],
+  ['Edge burst', edgeBurstScenario, 4, 'immediate', [stormAndBurst, storm]],
   ['Edge burst', edgeBurstScenario, 4, 'backoff-jitter', [burst, none]],
   ['Edge burst', edgeBurstScenario, 12, undefined, [burst, none]],
-  ['Edge burst', edgeBurstScenario, 12, 'immediate', [burst, none]],
+  ['Edge burst', edgeBurstScenario, 12, 'immediate', [stormAndBurst, storm]],
   ['Edge burst', edgeBurstScenario, 12, 'backoff-jitter', [burst, none]],
 ]
 

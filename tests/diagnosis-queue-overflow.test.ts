@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createDiagnoser, type DiagnoserOptions, type Finding } from '../src/sim/diagnosis.ts'
 import type { Snapshot } from '../src/sim/metrics.ts'
 import type { AllowedSubBuckets } from '../src/sim/engine.ts'
+import { snapshotAt } from './snapshots.ts'
 
 const options: DiagnoserOptions = {
   backend: { slots: 4, queueLimit: 20, meanMs: 100, cv: 1 },
@@ -9,34 +10,7 @@ const options: DiagnoserOptions = {
 }
 const allowed: AllowedSubBuckets = { bucketMs: 100, counts: [] }
 
-/** A Snapshot ending at `t` (ms) with every count 0, plus `fields`. */
-function snapshot(t: number, fields: Partial<Snapshot> = {}): Snapshot {
-  return {
-    t,
-    warmUp: t <= 5000,
-    demand: 0,
-    offeredLoad: 0,
-    allowed: 0,
-    rejected: 0,
-    delayed: 0,
-    goodput: 0,
-    failed: { rejected: 0, timedOut: 0, shed: 0 },
-    wastedWorkMs: 0,
-    backendUtil: 0,
-    queueDepth: 0,
-    peakQueueDepth: 0,
-    shed: 0,
-    attemptsTimedOut: 0,
-    p50: null,
-    p95: null,
-    p99: null,
-    e2eP50: null,
-    e2eP95: null,
-    e2eP99: null,
-    perClient: {},
-    ...fields,
-  }
-}
+const snapshot = snapshotAt
 
 /** Feeds 1,000 allowed a second with `lost[i]` of them shed in second 6 + i, after warm-up. */
 function diagnose(lost: readonly number[], fields: Partial<Snapshot> = {}) {

@@ -141,7 +141,13 @@ interface AttemptState {
 /** Events the engine schedules on its queue. New arrivals are read from the traffic log. */
 type EngineEvent =
   | { readonly kind: 'serviceEnd'; readonly attempt: AttemptState }
-  | { readonly kind: 'retry'; readonly request: RequestState; readonly attemptNo: number }
+  | {
+      readonly kind: 'retry'
+      readonly request: RequestState
+      readonly attemptNo: number
+      /** How long after the failure it starts, in ms. */
+      readonly waitedMs: number
+    }
   | { readonly kind: 'timeout'; readonly attempt: AttemptState }
   | { readonly kind: 'decision'; readonly attempt: AttemptState }
   | { readonly kind: 'release'; readonly attempt: AttemptState }
@@ -298,6 +304,7 @@ export function createEngine(options: EngineOptions): Engine {
       kind: 'retry',
       request: attempt.request,
       attemptNo: attempt.attemptNo + 1,
+      waitedMs: delayMs,
     })
   }
 
@@ -322,6 +329,7 @@ export function createEngine(options: EngineOptions): Engine {
         serviceEnd(event.attempt)
         return
       case 'retry':
+        metrics.retried(event.waitedMs)
         startAttempt(event.request, event.attemptNo)
         return
       case 'timeout':

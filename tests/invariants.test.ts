@@ -171,6 +171,8 @@ function checkSnapshots(
     const counts: Record<string, number> = {
       demand: s.demand,
       offeredLoad: s.offeredLoad,
+      retries: s.retries,
+      quickRetries: s.quickRetries,
       allowed: s.allowed,
       rejected: s.rejected,
       delayed: s.delayed,
@@ -194,6 +196,12 @@ function checkSnapshots(
     if (clientOffered !== s.offeredLoad)
       at(`Clients offered ${clientOffered}, in all ${s.offeredLoad}`)
     if (clientAllowed !== s.allowed) at(`Clients allowed ${clientAllowed}, in all ${s.allowed}`)
+    // A Request's first Attempt starts the moment it arrives, so in the same second.
+    if (s.retries !== s.offeredLoad - s.demand) {
+      at(`retries ${s.retries}, but Offered Load ${s.offeredLoad} minus Demand ${s.demand}`)
+    }
+    if (s.quickRetries > s.retries) at(`quick retries ${s.quickRetries} over retries ${s.retries}`)
+    if (retry.retry === 'none' && s.retries !== 0) at(`${s.retries} retries with no retry`)
     if (!(Number.isFinite(s.backendUtil) && s.backendUtil >= 0 && s.backendUtil <= 1)) {
       at(`utilization is ${s.backendUtil}`)
     }
@@ -237,6 +245,7 @@ function checkSums(engine: Engine, beforeEnd: Totals, fail: (what: string) => vo
   const pairs: [string, number, number][] = [
     ['demand', sum((s) => s.demand), r.created],
     ['offered', sum((s) => s.offeredLoad), attempts.offered],
+    ['retries', sum((s) => s.retries), attempts.offered - r.created],
     ['allowed', sum((s) => s.allowed), attempts.allowed],
     ['rejected', sum((s) => s.rejected), attempts.rejected],
     ['shed', sum((s) => s.shed), attempts.shed],

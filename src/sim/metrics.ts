@@ -19,6 +19,16 @@ export const PERCENTILE_WINDOW_MS = 5000
 /** The warm-up: Snapshots ending at or before this, in ms, are flagged and not diagnosed (D4). */
 export const WARM_UP_MS = 5000
 
+/**
+ * A retry that starts less than this long after the failure that caused it counts as quick:
+ * too soon for whatever failed it to have changed. "Retry at once" waits 0 ms; a token
+ * bucket's Retry-After is the time to its next whole token, 1000 / refill per second (14 ms
+ * at 70/s); full jitter waits a random share of 100 ms or more, so under a tenth of its first
+ * retries are this quick. Chosen from .scratch/diagnosis/retry-probe.ts (see
+ * RETRY_STORM_QUICK_SHARE in diagnosis.ts).
+ */
+export const QUICK_RETRY_MS = 10
+
 /** What one simulated second looked like. Counts are for that second only. */
 export interface Snapshot {
   /** The end of the second, in ms: the Snapshot covers [t - 1000, t). */
@@ -29,6 +39,10 @@ export interface Snapshot {
   readonly demand: number
   /** Attempts reaching the Limiter, retries included. */
   readonly offeredLoad: number
+  /** Attempts after a Request's first: Offered Load minus this second's new Requests. */
+  readonly retries: number
+  /** Retries that started less than QUICK_RETRY_MS after the failure that caused them. */
+  readonly quickRetries: number
   /** Limiter Decisions made this second. */
   readonly allowed: number
   readonly rejected: number
@@ -107,6 +121,8 @@ function createLatencyWindow() {
 export interface Counts {
   demand: number
   offeredLoad: number
+  retries: number
+  quickRetries: number
   allowed: number
   rejected: number
   delayed: number
@@ -120,6 +136,8 @@ function emptyCounts(): Counts {
   return {
     demand: 0,
     offeredLoad: 0,
+    retries: 0,
+    quickRetries: 0,
     allowed: 0,
     rejected: 0,
     delayed: 0,
@@ -174,6 +192,11 @@ export function createMetricsCollector(subBucketMs: number) {
     offered(clientId: ClientId): void {
       add((c) => c.offeredLoad++)
       client(clientId).offeredLoad++
+    },
+    /** A retry Attempt is starting, `waitedMs` after the failure that caused it. */
+    retried(waitedMs: number): void {
+      add((c) => c.retries++)
+      if (waitedMs < QUICK_RETRY_MS) add((c) => c.quickRetries++)
     },
     allowed(clientId: ClientId, nowMs: number): void {
       add((c) => c.allowed++)

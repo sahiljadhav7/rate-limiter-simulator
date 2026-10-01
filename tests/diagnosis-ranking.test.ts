@@ -8,42 +8,15 @@ import {
   type Rule,
 } from '../src/sim/diagnosis.ts'
 import type { AllowedSubBuckets } from '../src/sim/engine.ts'
-import type { Snapshot } from '../src/sim/metrics.ts'
 import type { BackendSpec } from '../src/sim/backend.ts'
 import type { LimiterSpec } from '../src/sim/limiter.ts'
+import { snapshotAt } from './snapshots.ts'
 
 const backend: BackendSpec = { slots: 4, queueLimit: 20, meanMs: 100, cv: 1 }
 const limiter: LimiterSpec = { algo: 'fixed-window', keyBy: 'global', limit: 10, windowMs: 1000 }
 const allowed: AllowedSubBuckets = { bucketMs: 100, counts: [] }
 
-/** A Snapshot ending at `t` (ms) with every count 0, plus `fields`. */
-function snapshot(t: number, fields: Partial<Snapshot> = {}): Snapshot {
-  return {
-    t,
-    warmUp: t <= 5000,
-    demand: 0,
-    offeredLoad: 0,
-    allowed: 0,
-    rejected: 0,
-    delayed: 0,
-    goodput: 0,
-    failed: { rejected: 0, timedOut: 0, shed: 0 },
-    wastedWorkMs: 0,
-    backendUtil: 0,
-    queueDepth: 0,
-    peakQueueDepth: 0,
-    shed: 0,
-    attemptsTimedOut: 0,
-    p50: null,
-    p95: null,
-    p99: null,
-    e2eP50: null,
-    e2eP95: null,
-    e2eP99: null,
-    perClient: {},
-    ...fields,
-  }
-}
+const snapshot = snapshotAt
 
 /** A rule that fires `warn` while the newest Snapshot's end is in one of `spans` (ms, [from, to)). */
 function scripted(id: FailureMode, ...spans: (readonly [number, number])[]): Rule {

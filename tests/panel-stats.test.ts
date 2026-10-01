@@ -6,36 +6,10 @@ import {
   limiterCapacity,
   panelStats,
 } from '../src/ui/panel/stats.ts'
-import type { LimiterSpec, Snapshot } from '../src/sim/index.ts'
+import type { LimiterSpec } from '../src/sim/index.ts'
+import { snapshotAt } from './snapshots.ts'
 
-/** A Snapshot ending at `t` with every count 0, plus `fields`. */
-function snapshot(t: number, fields: Partial<Snapshot> = {}): Snapshot {
-  return {
-    t,
-    warmUp: t <= 5000,
-    demand: 0,
-    offeredLoad: 0,
-    allowed: 0,
-    rejected: 0,
-    delayed: 0,
-    goodput: 0,
-    failed: { rejected: 0, timedOut: 0, shed: 0 },
-    wastedWorkMs: 0,
-    backendUtil: 0,
-    queueDepth: 0,
-    peakQueueDepth: 0,
-    shed: 0,
-    attemptsTimedOut: 0,
-    p50: null,
-    p95: null,
-    p99: null,
-    e2eP50: null,
-    e2eP95: null,
-    e2eP99: null,
-    perClient: {},
-    ...fields,
-  }
-}
+const snapshot = snapshotAt
 
 const fixedWindow: LimiterSpec = {
   algo: 'fixed-window',

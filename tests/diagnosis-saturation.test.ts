@@ -5,6 +5,7 @@ import { createDiagnoser, saturationRule, type Finding } from '../src/sim/diagno
 import type { AllowedSubBuckets } from '../src/sim/engine.ts'
 import type { Snapshot } from '../src/sim/metrics.ts'
 import type { BackendSpec } from '../src/sim/backend.ts'
+import { snapshotAt } from './snapshots.ts'
 
 /** Ceiling 4 x 1000 / 50 = 80 per second; cv 1, so the baseline p99 is 50 x ln 100 = 230.3 ms. */
 const backend: BackendSpec = { slots: 4, queueLimit: 40, meanMs: 50, cv: 1 }
@@ -43,32 +44,8 @@ function saturationEachSecond(sc: Scenario) {
 }
 
 /** A Snapshot ending at `t` after the warm-up, with `backendUtil` and `p99`. */
-function snapshot(t: number, backendUtil: number, p99: number | null): Snapshot {
-  return {
-    t,
-    warmUp: false,
-    demand: 0,
-    offeredLoad: 0,
-    allowed: 0,
-    rejected: 0,
-    delayed: 0,
-    goodput: 0,
-    failed: { rejected: 0, timedOut: 0, shed: 0 },
-    wastedWorkMs: 0,
-    backendUtil,
-    queueDepth: 0,
-    peakQueueDepth: 0,
-    shed: 0,
-    attemptsTimedOut: 0,
-    p50: null,
-    p95: null,
-    p99,
-    e2eP50: null,
-    e2eP95: null,
-    e2eP99: null,
-    perClient: {},
-  }
-}
+const snapshot = (t: number, backendUtil: number, p99: number | null): Snapshot =>
+  snapshotAt(t, { warmUp: false, backendUtil, p99 })
 
 /** Severity after each of `seconds`, each [busy, p99 in ms], fed to the saturation rule alone. */
 function severities(seconds: readonly (readonly [number, number | null])[]) {

@@ -10,7 +10,7 @@ import { baselineP99Ms } from './baseline.ts'
 import type { AllowedSubBuckets } from './engine.ts'
 import { bucketAt } from './buckets.ts'
 import type { FixedWindowSpec, LimiterSpec } from './limiter.ts'
-import { SNAPSHOT_MS, type Snapshot } from './metrics.ts'
+import { QUICK_RETRY_MS, SNAPSHOT_MS, type Snapshot } from './metrics.ts'
 import { rollingWindowCounts } from './window-counts.ts'
 
 /** A named way the simulated system goes wrong. */
@@ -170,6 +170,36 @@ export const BOUNDARY_BURST_BROKEN_RATIO = 1.6
  * stop.
  */
 export const BOUNDARY_BURST_CLEAR_WINDOWS = 10
+
+/**
+ * Retry Amplification (Offered Load over Demand, across the window) at which a retry storm
+ * becomes `warn` when retries are quick (BaseConcept: 1.5). Without retries it is 1.00 in
+ * every window of both Scenarios (seeds 1 to 8, 120 s, .scratch/diagnosis/retry-probe.ts).
+ */
+export const RETRY_STORM_AMPLIFICATION = 1.5
+
+/** Retry Amplification at which a retry storm with quick retries becomes `broken`. */
+export const RETRY_STORM_BROKEN_AMPLIFICATION = 2
+
+/**
+ * The share of retries that must have started within QUICK_RETRY_MS of their failure for
+ * amplification to count as a storm. Amplification alone cannot tell a storm from retries that
+ * back off: every retrying policy reaches 2x to 4x in Backend overload at 30/s and Edge burst.
+ * Measured in windows at 1.5x or more (seeds 1 to 8, 120 s, default and 3x Demand,
+ * .scratch/diagnosis/retry-probe.ts): "Retry at once" is always 100% quick; "Back off" 0%;
+ * "Back off with jitter" at most 27%; "Wait for Retry-After" at most 42%, from a token bucket
+ * whose Retry-After is the 14 ms to its next token. Retries timed by the Limiter's own advice
+ * are what the fix recommends, so 60% sits well clear of them and of 100%.
+ */
+export const RETRY_STORM_QUICK_SHARE = 0.6
+
+/**
+ * How many windows in a row must stay under a threshold before a retry storm leaves that
+ * severity: 10, as for boundary burst. In Edge burst retries come with the bursts every 10 s,
+ * so with "Retry at once" amplification is over 1.5 in only 60% of windows; without a hold the
+ * Finding would start again at every burst.
+ */
+export const RETRY_STORM_CLEAR_WINDOWS = 10
 
 /**
  * What a rule detects in one full window: the parts of a Finding that come from its numbers.
@@ -357,6 +387,31 @@ export function saturationRule(backend: BackendSpec): Rule {
 }
 
 /**
+ * Severity for a Failure Mode that comes and goes in bursts faster than the window: a level
+ * holds until `clearWindows` windows in a row have not reached it, and the reading shown is
+ * the newest one that did. Returns a function taking each window's level and reading.
+ */
+function createHold<T>(clearWindows: number) {
+  let quietSinceBroken = Infinity
+  let quietSinceWarn = Infinity
+  let lastBroken: T | null = null
+  let lastWarn: T | null = null
+  return (level: Severity | null, reading: T): { severity: Severity; reading: T } | null => {
+    quietSinceBroken = level === 'broken' ? 0 : quietSinceBroken + 1
+    quietSinceWarn = level !== null ? 0 : quietSinceWarn + 1
+    if (level === 'broken') lastBroken = reading
+    if (level !== null) lastWarn = reading
+    if (quietSinceBroken < clearWindows && lastBroken !== null) {
+      return { severity: 'broken', reading: lastBroken }
+    }
+    if (quietSinceWarn < clearWindows && lastWarn !== null) {
+      return { severity: 'warn', reading: lastWarn }
+    }
+    return null
+  }
+}
+
+/**
  * The boundary burst rule, for a fixed window: allowed Attempts in any span of one
  * window-length, sampled every sub-bucket (a tenth of a window), against the limit. It reads
  * the same rolling count the boundary-burst chart draws.
@@ -374,10 +429,7 @@ export function boundaryBurstRule({ keyBy, limit, windowMs }: FixedWindowSpec): 
     readonly limit: number
     readonly keys: number
   }
-  let lastBroken: Peak | null = null
-  let lastOver: Peak | null = null
-  let quietSinceBroken = Infinity
-  let quietSinceOver = Infinity
+  const hold = createHold<Peak>(BOUNDARY_BURST_CLEAR_WINDOWS)
 
   return {
     id: 'boundary-burst',
@@ -401,23 +453,15 @@ export function boundaryBurstRule({ keyBy, limit, windowMs }: FixedWindowSpec): 
           peak = { count: p.v, at: p.t, limit: limit * keys, keys }
       }
       const ratio = peak === null ? 0 : peak.count / peak.limit
-      quietSinceBroken = ratio >= BOUNDARY_BURST_BROKEN_RATIO ? 0 : quietSinceBroken + 1
-      quietSinceOver = ratio > BOUNDARY_BURST_WARN_RATIO ? 0 : quietSinceOver + 1
-      if (quietSinceBroken === 0) lastBroken = peak
-      if (quietSinceOver === 0) lastOver = peak
-
-      let severity: Severity
-      let shown: Peak | null
-      if (quietSinceBroken < BOUNDARY_BURST_CLEAR_WINDOWS) {
-        severity = 'broken'
-        shown = lastBroken
-      } else if (quietSinceOver < BOUNDARY_BURST_CLEAR_WINDOWS) {
-        severity = 'warn'
-        shown = lastOver
-      } else {
-        return null
-      }
-      if (shown === null) return null
+      const level =
+        peak === null || ratio <= BOUNDARY_BURST_WARN_RATIO
+          ? null
+          : ratio >= BOUNDARY_BURST_BROKEN_RATIO
+            ? 'broken'
+            : 'warn'
+      const held = peak === null ? hold(null, { count: 0, at: 0, limit, keys }) : hold(level, peak)
+      if (held === null) return null
+      const { severity, reading: shown } = held
       const over = `${(shown.count / shown.limit).toFixed(1)}×`
       const when = `${(shown.at / 1000).toFixed(1)} s`
       const limitText =
@@ -452,10 +496,81 @@ export function boundaryBurstRule({ keyBy, limit, windowMs }: FixedWindowSpec): 
   }
 }
 
+/**
+ * The retry storm rule: Offered Load well above Demand over the window because failed
+ * Attempts come straight back, measured by how many retries started within QUICK_RETRY_MS of
+ * the failure that caused them.
+ */
+export function retryStormRule(): Rule {
+  type Reading = {
+    readonly demand: number
+    readonly offered: number
+    readonly quickShare: number
+    readonly seconds: number
+  }
+  const hold = createHold<Reading>(RETRY_STORM_CLEAR_WINDOWS)
+
+  return {
+    id: 'retry-storm',
+    judge(window) {
+      const sum = (pick: (s: Snapshot) => number) => window.reduce((t, s) => t + pick(s), 0)
+      const demand = sum((s) => s.demand)
+      const offered = sum((s) => s.offeredLoad)
+      const retries = sum((s) => s.retries)
+      const reading = {
+        demand,
+        offered,
+        quickShare: retries === 0 ? 0 : sum((s) => s.quickRetries) / retries,
+        seconds: window.length,
+      }
+      // With no Demand there is no amplification to judge.
+      const amplification = demand === 0 ? 0 : offered / demand
+      const storm = reading.quickShare >= RETRY_STORM_QUICK_SHARE
+      const level =
+        !storm || amplification < RETRY_STORM_AMPLIFICATION
+          ? null
+          : amplification >= RETRY_STORM_BROKEN_AMPLIFICATION
+            ? 'broken'
+            : 'warn'
+      const held = hold(level, reading)
+      if (held === null) return null
+      const shown = held.reading
+      const perSecond = (n: number) => `${(n / shown.seconds).toFixed(1)}/s`
+      const amp = `${(shown.offered / shown.demand).toFixed(1)}×`
+      const quick = `${Math.round(shown.quickShare * 100)}%`
+      return {
+        severity: held.severity,
+        evidence: [
+          { metric: 'Offered Load', value: perSecond(shown.offered) },
+          { metric: 'Demand', value: perSecond(shown.demand) },
+          { metric: 'Retry Amplification', value: amp },
+          { metric: `Retries within ${QUICK_RETRY_MS} ms`, value: quick },
+        ],
+        why:
+          `Offered Load reached ${amp} Demand because ${quick} of retries came within ` +
+          `${QUICK_RETRY_MS} ms of the failure that caused them, too soon for anything to have ` +
+          'changed.',
+        fixes: [
+          // Ranked by Goodput for the sliding window counter in Backend overload at 30/s with
+          // "Retry at once" (9.9 to 10.7/s), seeds 1 to 8 (.scratch/diagnosis/retry-fixes.ts):
+          // back off with jitter 12.7 to 13.6/s; wait for Retry-After 10.9 to 11.6/s; 2 Attempts
+          // instead of 3, 10.5 to 11.0/s, with amplification down from 2.3x to 1.65x.
+          { text: 'Try backing off with jitter, so retries wait a random, growing time' },
+          {
+            text: 'Try waiting for Retry-After, so retries come when the Limiter says there is room',
+          },
+          { text: 'Try fewer Attempts per Request, so each failure adds less traffic' },
+        ],
+      }
+    },
+  }
+}
+
 /** The rules every Variant is diagnosed with: boundary burst only behind a fixed window. */
 export function defaultRules({ backend, limiter }: DiagnoserOptions): Rule[] {
   return [
     ...(limiter.algo === 'fixed-window' ? [boundaryBurstRule(limiter)] : []),
+    retryStormRule(),
     saturationRule(backend),
     queueOverflowRule(backend),
   ]
