@@ -11,7 +11,7 @@
  * tests import them from their own files.
  */
 export { checkBackendSpec, type BackendSpec } from './backend.ts'
-export { checkNonNegative } from './checks.ts'
+export { checkNonNegative, checkPositive } from './checks.ts'
 export { createSimClock, type SimClock } from './clock.ts'
 export {
   createEngine,

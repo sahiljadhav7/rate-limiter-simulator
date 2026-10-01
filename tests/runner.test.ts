@@ -394,3 +394,96 @@ describe('the event budget', () => {
     }
   })
 })
+
+describe('step', () => {
+  it('while paused, advances exactly one simulated second, the same as running straight there', () => {
+    const runner = createRunner(scenario, UNLIMITED)
+    tickTo(runner, 3000)
+    runner.pause()
+    runner.step()
+    expect(runner.view().simMs).toBe(4000)
+    expect(results(runner)).toEqual(resultsDirectly(scenario, 4000))
+    runner.step(500)
+    expect(runner.view().simMs).toBe(4500)
+  })
+
+  it('ignores the event budget, so a step is always the whole step', () => {
+    const runner = createRunner(scenario, { eventBudget: 1 })
+    runner.pause()
+    runner.step()
+    expect(runner.view().simMs).toBe(1000)
+  })
+
+  it('throws a RangeError while running, or for a step that is not more than 0', () => {
+    const runner = createRunner(scenario, UNLIMITED)
+    expect(() => runner.step()).toThrow(RangeError)
+    runner.pause()
+    for (const ms of [0, -1, Number.NaN]) expect(() => runner.step(ms)).toThrow(RangeError)
+    expect(runner.view().simMs).toBe(0)
+  })
+})
+
+describe('restart', () => {
+  const edited: Scenario = {
+    ...scenario,
+    variants: scenario.variants.map((variant, i) =>
+      i === 0 ? { ...variant, retry: { timeoutMs: 150, maxAttempts: 1, retry: 'none' } } : variant,
+    ),
+  }
+  const liveChange: ControlChange = { kind: 'demand', demandRps: 400 }
+
+  it('runs the edited Scenario from 0 with the live changes replayed at their times', () => {
+    const runner = createRunner(scenario, UNLIMITED)
+    tickTo(runner, 3000)
+    runner.applyControl(liveChange)
+    tickTo(runner, 3500)
+    runner.restart(edited)
+    expect(runner.view().simMs).toBe(0)
+    tickTo(runner, 6000)
+
+    // The same edit as a fresh Scenario, with the live change scripted where it happened.
+    const controls = [...(scenario.controls ?? []), { atMs: 3000, change: liveChange }].sort(
+      (a, b) => a.atMs - b.atMs,
+    )
+    const expected = createRunner({ ...edited, controls }, UNLIMITED)
+    tickTo(expected, 6000)
+    expect(results(runner)).toEqual(results(expected))
+    // A no-op test would pass if the edit were ignored: the edited Variant really differs.
+    const unedited = createRunner({ ...scenario, controls }, UNLIMITED)
+    tickTo(unedited, 6000)
+    expect(results(runner)[0]).not.toEqual(results(unedited)[0])
+  })
+
+  it('keeps the speed, whether paused, and the live changes, which a later reset drops', () => {
+    const runner = createRunner(scenario, UNLIMITED)
+    tickTo(runner, 3000)
+    runner.applyControl(liveChange)
+    runner.setSpeed(10)
+    runner.pause()
+    runner.restart(edited)
+    expect(runner.view()).toMatchObject({ simMs: 0, speed: 10, paused: true })
+    // The timeline lists what has happened so far, so the change shows once the run passes 3 s.
+    runner.step(3500)
+    expect(runner.view().timeline).toContainEqual({ atMs: 3000, change: liveChange })
+    runner.reset()
+    runner.step(6000)
+    expect(runner.view().timeline).toEqual(scenario.controls)
+  })
+
+  it('throws a RangeError, leaving the run unchanged, for other Variants or Clients', () => {
+    const runner = createRunner(scenario, UNLIMITED)
+    tickTo(runner, 2000)
+    const before = results(runner)
+    expect(() => runner.restart({ ...scenario, variants: scenario.variants.slice(1) })).toThrow(
+      RangeError,
+    )
+    expect(() =>
+      runner.restart({
+        ...scenario,
+        traffic: { ...scenario.traffic, clients: ['a', 'b', 'c', 'd'] },
+      }),
+    ).toThrow(RangeError)
+    expect(runner.view().simMs).toBe(2000)
+    expect(results(runner)).toEqual(before)
+  })
+})
