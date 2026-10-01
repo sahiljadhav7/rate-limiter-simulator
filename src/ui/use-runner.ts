@@ -23,7 +23,7 @@ export interface RunnerControls {
   step(): void
   reset(): void
   setSpeed(speed: Speed): void
-  /** Starts the edited Scenario from 0, with the live changes replayed. */
+  /** Starts the edited Scenario fresh from 0, with no live change replayed. */
   restart(scenario: Scenario): void
 }
 

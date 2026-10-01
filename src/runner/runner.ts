@@ -119,10 +119,12 @@ export interface Runner {
   step(ms?: number): void
   /**
    * Starts a fresh run from 0 of `next`, an edit of the Scenario such as a new Retry Policy or
-   * seed, with the live changes so far replayed at their times. The speed and whether it is
-   * paused stay as they were. Throws a RangeError, leaving the run unchanged, if `next` is
-   * invalid or has other Clients or another number of Variants than the current Scenario,
-   * which the live changes and the panels depend on.
+   * seed, with no live change replayed: a caller that wants to keep the current Demand puts it
+   * in `next`'s traffic, as a shared link does. Replaying would move the Demand slider on its
+   * own as the run passed the times of the old changes. The speed and whether it is paused stay
+   * as they were; a later reset returns to `next`. Throws a RangeError, leaving the run
+   * unchanged, if `next` is invalid or has other Clients or another number of Variants than the
+   * current Scenario, which the panels depend on.
    */
   restart(next: Scenario): void
   /** Throws a RangeError for a speed not in SPEEDS. */
@@ -154,14 +156,6 @@ interface RunVariant {
 interface Run {
   readonly source: TrafficSource
   readonly variants: readonly RunVariant[]
-}
-
-/** `scenario` with `live` added to its scripted controls, in time order, scripted first at a tie. */
-function withLive(scenario: Scenario, live: readonly ControlEvent[]): Scenario {
-  if (live.length === 0) return scenario
-  const controls = [...(scenario.controls ?? []), ...live]
-  // Array sort is stable, so equal times keep the scripted controls first.
-  return { ...scenario, controls: controls.sort((a, b) => a.atMs - b.atMs) }
 }
 
 /** Throws a RangeError unless `next` has the same Clients and number of Variants as `current`. */
@@ -209,8 +203,6 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
     throw new RangeError(`The event budget must be more than 0, got ${eventBudget}`)
   }
   let current = scenario
-  /** The live changes of this run, which a restart replays and a reset drops. */
-  let live: ControlEvent[] = []
   let run = startRun(current)
   let simMs = 0
   let paused = false
@@ -260,7 +252,6 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
       paused = false
     },
     reset() {
-      live = []
       run = startRun(current)
       simMs = 0
       behind = false
@@ -273,7 +264,7 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
     },
     restart(next) {
       checkSameShape(current, next)
-      const nextRun = startRun(withLive(next, live))
+      const nextRun = startRun(next)
       current = next
       run = nextRun
       simMs = 0
@@ -287,7 +278,6 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
     },
     applyControl(change) {
       run.source.applyControl(change)
-      live.push({ atMs: simMs, change })
     },
     view() {
       return {

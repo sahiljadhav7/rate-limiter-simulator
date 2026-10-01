@@ -54,12 +54,13 @@ function ScenarioRun(props: {
   const controls = useMemo<RunnerControls>(
     () => ({
       ...runnerControls,
+      // Back to 0 of the Scenario as last started, at the Demand it started with.
       reset: () => {
         runnerControls.reset()
-        setLinkDemand(initial.traffic.demandRps)
+        setLinkDemand(scenario.traffic.demandRps)
       },
     }),
-    [runnerControls, initial],
+    [runnerControls, scenario],
   )
   const link = useMemo(
     () => shareUrl(window.location.href, scenario, linkDemand),
@@ -69,13 +70,18 @@ function ScenarioRun(props: {
   useEffect(() => {
     window.history.replaceState(null, '', link)
   }, [link])
-  /** Restarts the run on `next`, then shows it; the runner throws first if `next` cannot run. */
+  /**
+   * Restarts the run fresh from 0 on `next` at the current Demand, as opening its link would, then
+   * shows it; the runner throws first if `next` cannot run. Nothing is replayed, so the slider
+   * stays where it is.
+   */
   const restartWith = useCallback(
-    (next: Scenario) => {
+    (edit: Scenario) => {
+      const next = { ...edit, traffic: { ...edit.traffic, demandRps: linkDemand } }
       runnerControls.restart(next)
       setScenario(next)
     },
-    [runnerControls],
+    [runnerControls, linkDemand],
   )
   const onSeed = useCallback(
     (seed: number) => restartWith({ ...scenario, seed }),

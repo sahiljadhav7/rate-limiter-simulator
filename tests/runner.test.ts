@@ -434,7 +434,7 @@ describe('restart', () => {
   }
   const liveChange: ControlChange = { kind: 'demand', demandRps: 400 }
 
-  it('runs the edited Scenario from 0 with the live changes replayed at their times', () => {
+  it('runs the edited Scenario fresh from 0, with no live change replayed', () => {
     const runner = createRunner(scenario, UNLIMITED)
     tickTo(runner, 3000)
     runner.applyControl(liveChange)
@@ -443,20 +443,30 @@ describe('restart', () => {
     expect(runner.view().simMs).toBe(0)
     tickTo(runner, 6000)
 
-    // The same edit as a fresh Scenario, with the live change scripted where it happened.
-    const controls = [...(scenario.controls ?? []), { atMs: 3000, change: liveChange }].sort(
-      (a, b) => a.atMs - b.atMs,
-    )
-    const expected = createRunner({ ...edited, controls }, UNLIMITED)
+    // Exactly the edited Scenario run on its own: the 400/s from the old run is gone.
+    const expected = createRunner(edited, UNLIMITED)
     tickTo(expected, 6000)
     expect(results(runner)).toEqual(results(expected))
+    expect(runner.view().timeline).toEqual(scenario.controls)
     // A no-op test would pass if the edit were ignored: the edited Variant really differs.
-    const unedited = createRunner({ ...scenario, controls }, UNLIMITED)
+    const unedited = createRunner(scenario, UNLIMITED)
     tickTo(unedited, 6000)
     expect(results(runner)[0]).not.toEqual(results(unedited)[0])
   })
 
-  it('keeps the speed, whether paused, and the live changes, which a later reset drops', () => {
+  it('starts at the Demand the edited Scenario carries, which is how a caller keeps the current one', () => {
+    const runner = createRunner(scenario, UNLIMITED)
+    tickTo(runner, 3000)
+    runner.applyControl(liveChange)
+    const kept = { ...edited, traffic: { ...edited.traffic, demandRps: liveChange.demandRps } }
+    runner.restart(kept)
+    tickTo(runner, 6000)
+    const expected = createRunner(kept, UNLIMITED)
+    tickTo(expected, 6000)
+    expect(results(runner)).toEqual(results(expected))
+  })
+
+  it('keeps the speed and whether paused; a later reset returns to the edited Scenario', () => {
     const runner = createRunner(scenario, UNLIMITED)
     tickTo(runner, 3000)
     runner.applyControl(liveChange)
@@ -464,12 +474,11 @@ describe('restart', () => {
     runner.pause()
     runner.restart(edited)
     expect(runner.view()).toMatchObject({ simMs: 0, speed: 10, paused: true })
-    // The timeline lists what has happened so far, so the change shows once the run passes 3 s.
     runner.step(3500)
-    expect(runner.view().timeline).toContainEqual({ atMs: 3000, change: liveChange })
+    const restarted = results(runner)
     runner.reset()
-    runner.step(6000)
-    expect(runner.view().timeline).toEqual(scenario.controls)
+    runner.step(3500)
+    expect(results(runner)).toEqual(restarted)
   })
 
   it('throws a RangeError, leaving the run unchanged, for other Variants or Clients', () => {
