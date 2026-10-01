@@ -23,7 +23,10 @@ export interface EngineOptions {
   readonly limiter: Limiter
   readonly retry: RetryPolicy
   readonly backend: BackendSpec
-  /** The run's streams. The Backend draws service times from `service`. */
+  /**
+   * The run's streams. The Backend draws service times from `service`, and the Retry Policy
+   * draws its jittered waits from `jitter`.
+   */
   readonly streams: RandomStreams
   /**
    * How long the Limiter takes to decide, in ms: the round trip to a shared counter store
@@ -212,7 +215,7 @@ export function createEngine(options: EngineOptions): Engine {
     if (decision.kind === 'reject') {
       metrics.rejected()
       attempt.stage = 'done'
-      if (!attempt.abandoned) retryOrEnd(attempt, 'rejected')
+      if (!attempt.abandoned) retryOrEnd(attempt, 'rejected', decision.retryAfterMs)
       return
     }
     metrics.allowed(attempt.request.clientId, clock.now())
@@ -262,11 +265,16 @@ export function createEngine(options: EngineOptions): Engine {
 
   /**
    * An Attempt failed: the Retry Policy schedules the next Attempt, or the Request ends with
-   * this failure. Called once per Attempt at most: an abandoned Attempt's later reject or
-   * shed never comes here, because its timeout already did.
+   * this failure. A Reject passes on the Limiter's retry time, if it gave one. Called once per
+   * Attempt at most: an abandoned Attempt's later reject or shed never comes here, because its
+   * timeout already did.
    */
-  function retryOrEnd(attempt: AttemptState, failure: Failure): void {
-    const delayMs = retryDelayMs(retry, attempt.attemptNo)
+  function retryOrEnd(attempt: AttemptState, failure: Failure, retryAfterMs?: number): void {
+    const failed =
+      retryAfterMs === undefined
+        ? { attemptNo: attempt.attemptNo, failure }
+        : { attemptNo: attempt.attemptNo, failure, retryAfterMs }
+    const delayMs = retryDelayMs(retry, failed, options.streams.jitter)
     if (delayMs === null) {
       metrics.failed(failure)
       openRequests.delete(attempt.request)

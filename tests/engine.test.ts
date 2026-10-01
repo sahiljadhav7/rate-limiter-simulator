@@ -32,6 +32,8 @@ interface Setup {
   decisionDelayMs?: number
   subBucketMs?: number
   seed?: number
+  /** Retry jitter from another seed than the rest of the run. */
+  jitterSeed?: number
 }
 
 const noRetry: RetryPolicy = { timeoutMs: 1000, retry: 'none', maxAttempts: 1 }
@@ -53,7 +55,10 @@ function run(setup: Setup, stops: number[]): Engine {
     limiter: setup.limiter ?? allowAll(),
     retry: setup.retry ?? noRetry,
     backend: setup.backend ?? quickBackend,
-    streams: createStreams(seed),
+    streams:
+      setup.jitterSeed === undefined
+        ? createStreams(seed)
+        : { ...createStreams(seed), jitter: createStreams(setup.jitterSeed).jitter },
     ...(setup.decisionDelayMs === undefined ? {} : { decisionDelayMs: setup.decisionDelayMs }),
     ...(setup.subBucketMs === undefined ? {} : { subBucketMs: setup.subBucketMs }),
   }
@@ -136,6 +141,47 @@ describe('createEngine', () => {
       )
       expect(engine.totals().attempts).toMatchObject({ offered: 2, rejected: 2, allowed: 0 })
       expect(engine.totals().requests).toMatchObject({ rejected: 1, inFlight: 0 })
+    })
+
+    describe('waiting before a retry', () => {
+      /** Rejects the first two Attempts, with `retryAfterMs` if given, then allows. */
+      const rejectTwice = (retryAfterMs?: number) => {
+        let calls = 0
+        return stubLimiter(() => {
+          if (calls++ >= 2) return { kind: 'allow' }
+          return retryAfterMs === undefined ? { kind: 'reject' } : { kind: 'reject', retryAfterMs }
+        })
+      }
+      const oneRequest = (limiter: Limiter, retry: RetryPolicy) =>
+        run({ traffic: scriptedOnly, scripted: [{ atMs: 100, count: 1 }], limiter, retry }, [2000])
+      const waiting = (retry: 'backoff' | 'backoff-jitter' | 'retry-after'): RetryPolicy => ({
+        timeoutMs: 1000,
+        maxAttempts: 3,
+        retry,
+        baseDelayMs: 100,
+      })
+
+      it("honours the Reject's retry time under retry-after", () => {
+        const { limiter, asked } = rejectTwice(50)
+        oneRequest(limiter, waiting('retry-after'))
+        expect(asked.map((a) => a.nowMs)).toEqual([100, 150, 200])
+      })
+
+      it('backs off with jitter under retry-after when the Reject gives no retry time', () => {
+        const { limiter, asked } = rejectTwice()
+        oneRequest(limiter, waiting('retry-after'))
+        // The waits are the first two draws from seed 1's jitter stream times 100 and 200 ms.
+        const jitter = createStreams(1).jitter
+        const first = 100 + jitter.next() * 100
+        const second = first + jitter.next() * 200
+        expect(asked.map((a) => a.nowMs)).toEqual([100, first, second])
+      })
+
+      it('doubles the wait under backoff, whatever the Reject says', () => {
+        const { limiter, asked } = rejectTwice(50)
+        oneRequest(limiter, waiting('backoff'))
+        expect(asked.map((a) => a.nowMs)).toEqual([100, 200, 400])
+      })
     })
 
     it('never retries when the policy is none', () => {
@@ -234,6 +280,37 @@ describe('createEngine', () => {
       expect(engine.totals().requests).toMatchObject({ succeeded: 2, timedOut: 0, inFlight: 0 })
       expect(engine.totals().attempts).toMatchObject({ offered: 3, served: 3, timedOut: 1 })
       expect(engine.totals().wastedWorkMs).toBe(40)
+    })
+
+    // One Request at 100 ms. Its first Attempt is allowed and served 100 to 200 ms in the only
+    // slot, with no queue, but times out at 150; the retry at 150 is the last Attempt. A
+    // Request ends with how its last Attempt failed, so it is not Timed out here.
+    it.each<[string, () => LimiterDecision, object]>([
+      ['Rejected, when the retry is rejected', () => ({ kind: 'reject' }), { rejected: 1 }],
+      ['Shed, when the retry finds the slot busy', () => ({ kind: 'allow' }), { shed: 1 }],
+    ])('ends a Request that timed out and retried as %s', (_, second, ending) => {
+      let calls = 0
+      const { limiter } = stubLimiter(() => (calls++ === 0 ? { kind: 'allow' } : second()))
+      const engine = run(
+        {
+          traffic: scriptedOnly,
+          scripted: [{ atMs: 100, count: 1 }],
+          limiter,
+          retry: { timeoutMs: 50, retry: 'immediate', maxAttempts: 2 },
+          backend: { slots: 1, queueLimit: 0, meanMs: 100, cv: 0 },
+        },
+        [1000],
+      )
+      expect(engine.totals().requests).toEqual({
+        created: 1,
+        succeeded: 0,
+        rejected: 0,
+        timedOut: 0,
+        shed: 0,
+        inFlight: 0,
+        ...ending,
+      })
+      expect(engine.totals().attempts).toMatchObject({ offered: 2, timedOut: 1 })
     })
   })
 
@@ -504,6 +581,15 @@ describe('createEngine', () => {
       backend: { slots: 1, queueLimit: 5, meanMs: 20, cv: 0 },
     })
 
+    /**
+     * The mixed run with jittered waits: the stub's Rejects carry no retry time, so
+     * retry-after backs off with jitter after every failure, one draw per wait.
+     */
+    const jittered = (): Setup => ({
+      ...mixed(),
+      retry: { timeoutMs: 150, retry: 'retry-after', maxAttempts: 3, baseDelayMs: 20 },
+    })
+
     /** Stops every `stepMs`, so with whole-ms events many stops land exactly on one. */
     const every = (stepMs: number) =>
       Array.from({ length: UNTIL_MS / stepMs }, (_, i) => (i + 1) * stepMs)
@@ -511,6 +597,7 @@ describe('createEngine', () => {
     it.each([
       ['random times', mixed],
       ['exact ties', ties],
+      ['jittered retries', jittered],
     ])('gives identical results however the run is chunked (%s)', (_, setup) => {
       const once = run(setup(), [UNTIL_MS])
       for (const stops of [
@@ -525,6 +612,16 @@ describe('createEngine', () => {
         expect(chunked.snapshots()).toEqual(once.snapshots())
         expect(chunked.allowedSubBuckets()).toEqual(once.allowedSubBuckets())
       }
+    })
+
+    it('takes retry waits from the jitter stream: another jitter seed alone changes the run', () => {
+      const withJitterFrom = (jitterSeed: number) => run({ ...jittered(), jitterSeed }, [UNTIL_MS])
+      const same = withJitterFrom(99)
+      expect(same.snapshots()).toEqual(run(jittered(), [UNTIL_MS]).snapshots())
+      // Same traffic and service times, other retry waits: Demand matches, the rest does not.
+      const other = withJitterFrom(7)
+      expect(other.snapshots().map((s) => s.demand)).toEqual(same.snapshots().map((s) => s.demand))
+      expect(other.totals()).not.toEqual(same.totals())
     })
 
     it('gives identical results whether or not the totals are read along the way', () => {

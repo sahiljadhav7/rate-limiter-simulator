@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createRandomStream, type RandomStream } from '../src/sim/rng.ts'
+import { fixedStream } from './streams.ts'
 import {
   checkTrafficSpec,
   clientShares,
@@ -66,18 +67,6 @@ function shares(list: { clientId: string }[]): Record<string, number> {
 /** The gaps between consecutive times. */
 function gaps(times: number[]): number[] {
   return times.slice(1).map((t, i) => t - (times[i] ?? 0))
-}
-
-/** A stream that replays fixed values, for edge cases a real stream would take ages to hit. */
-function fixedStream(values: number[]): RandomStream {
-  let i = 0
-  return {
-    next() {
-      const value = values[i++ % values.length]
-      if (value === undefined) throw new Error('fixedStream needs at least one value')
-      return value
-    },
-  }
 }
 
 describe('unitExponential', () => {

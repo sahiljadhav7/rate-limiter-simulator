@@ -273,12 +273,15 @@ interface LimiterSpec {
 }
 
 // Retries after a Reject, a timeout or a Shed. One policy per Variant.
-interface RetryPolicy {
-  timeoutMs: number;               // per Attempt
-  retry: 'none' | 'immediate' | 'backoff' | 'backoff-jitter' | 'retry-after';
-  maxAttempts: number;
-  baseDelayMs?: number;
-}
+// A union on `retry`, like LimiterSpec: only the modes that wait have a base delay.
+type RetryPolicy =
+  | { timeoutMs: number; maxAttempts: number; retry: 'none' | 'immediate' }
+  | {
+      timeoutMs: number;           // per Attempt
+      maxAttempts: number;
+      retry: 'backoff' | 'backoff-jitter' | 'retry-after';
+      baseDelayMs: number;         // first retry's backoff; doubles per Attempt; full jitter
+    };
 
 interface ControlEvent {
   atMs: number;
@@ -442,7 +445,8 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
 - **RS-11 Sliding Window Counter [Core]** (1h)
   - *AC:* does not admit 2x the limit across a boundary in the same scenario where fixed window does.
 - **RS-12 Retry policies + timeout [Core]** (1.5h): none, immediate, exponential backoff, backoff plus jitter, `Retry-After`-honoring; per-Attempt `timeoutMs` and `maxAttempts`; retries after Reject, timeout and Shed; late responses discarded (D11). *Depends on RS-6.*
-  - *AC:* a retry storm scenario visibly raises Retry Amplification with immediate retry and not with backoff + jitter; a Request counts as Timed out only when its last Attempt timed out and no retry followed.
+  - *AC:* after a burst into a Limiter, immediate retries end Rejected while backoff + jitter lets them Succeed (Goodput); a Backend whose full queue waits longer than the timeout stays collapsed with retries (either policy) and recovers without; a Request counts as Timed out only when its last Attempt timed out and no retry followed.
+  - *Note (2026-10-01):* the original AC ("raises Retry Amplification with immediate retry and not with backoff + jitter") is false in this model and was changed with the human. A Request that keeps failing uses all its Attempts whatever the wait, so backoff spreads retries out but does not remove them; it wins on Goodput. See `.scratch/retry/spec.md` decision 10 and `tests/retry-storm.test.ts`.
 - **RS-14 Invariant test suite [Core]** (1h): no NaN or Infinity, failure breakdown sums to total, same seed + timeline gives an identical run. *Depends on RS-6.*
 - **RS-9 Leaky Bucket [Stretch]** (1h): bounded queue using the Delay decision; a full queue rejects (ADR 0001).
 - **RS-10 Sliding Window Log [Stretch]** (1h)
@@ -466,6 +470,7 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
 ## Epic 4: Scenarios and content
 - **RS-19a Two core scenarios [Core]** (1.5h): boundary burst (with scripted Edge Burst arrivals timed to the window edge, D12) and retry storm.
   - *AC:* each shows its intended lesson clearly at default settings.
+  - *Note (2026-10-01):* measured in RS-12, immediate retry vs backoff + jitter does not make "Goodput collapse in one Variant only": once a Backend's full queue waits longer than the timeout, both stay collapsed after the overload ends, and only no retry (or fewer Attempts, or a shorter queue) recovers. Redesign the retry-storm Variants from `tests/retry-storm.test.ts` before building it.
 - **RS-20a Short explainer [Core]** (0.5h): a "what you're seeing and why" note and a "what this models / leaves out" note for the two core scenarios.
 - **RS-19b Remaining four scenarios [Stretch]** (1.5h): noisy neighbor, burst tolerance, distributed limiter, limiting vs load shedding.
 - **RS-20b Full explainers + glossary [Stretch]** (1h): notes for all scenarios and a plain-language definition for every metric (from the Metrics glossary above).
