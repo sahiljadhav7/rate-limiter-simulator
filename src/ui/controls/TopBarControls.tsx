@@ -1,5 +1,6 @@
 import { memo, useId, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { SPEEDS, type Speed } from '../../runner/runner.ts'
+import { MAX_SEED } from '../../sim/index.ts'
 import { formatNumber } from '../panel/stats.ts'
 import type { RunnerControls } from '../use-runner.ts'
 import { DEMAND_TICKS, demandFromPosition, positionFromDemand } from './demand.ts'
@@ -86,7 +87,7 @@ function SeedField(props: { readonly seed: number; readonly onChange: (seed: num
       </label>
       <input
         id={id}
-        className="seed-input"
+        className="field seed-input"
         inputMode="numeric"
         value={text ?? String(seed)}
         aria-invalid={invalid}
@@ -100,7 +101,7 @@ function SeedField(props: { readonly seed: number; readonly onChange: (seed: num
       />
       {invalid ? (
         <span id={messageId} className="seed-message" role="alert">
-          A whole number from 0 to 4,294,967,295
+          A whole number from 0 to {MAX_SEED.toLocaleString('en-US')}
         </span>
       ) : null}
     </div>

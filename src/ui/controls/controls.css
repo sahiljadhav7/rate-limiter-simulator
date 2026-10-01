@@ -23,9 +23,8 @@
   font: inherit;
   font-weight: var(--fw-med);
   cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease),
-    transform var(--dur-fast) var(--ease);
+  /* Only transform animates (DESIGN.md "Motion"); the border changes at once on hover. */
+  transition: transform var(--dur-fast) var(--ease);
 }
 
 .btn:hover:not(:disabled) {
@@ -42,7 +41,7 @@
 }
 
 .btn:focus-visible,
-.top-bar-controls input:focus-visible {
+.demand-track input:focus-visible {
   outline: 2px solid var(--accent-ring);
   outline-offset: 2px;
 }
@@ -197,15 +196,8 @@
 
 .seed-input {
   width: 11ch;
-  height: 32px;
-  padding: 0 var(--sp-2);
-  border: var(--bw) solid var(--border-strong);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--text);
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: var(--fs-sm);
 }
 
 .seed-input[aria-invalid='true'] {

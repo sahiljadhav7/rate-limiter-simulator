@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { createRunner, type Runner, type RunnerView, type Speed } from '../runner/runner.ts'
+import { createRunner, type RunnerView, type Speed } from '../runner/runner.ts'
 import type { Scenario } from '../runner/scenario.ts'
 import type { ControlChange } from '../sim/index.ts'
 import { createPendingDemand } from './controls/pending-demand.ts'
@@ -35,12 +35,11 @@ export interface RunnerControls {
  *
  * The Scenario is read once; a new Scenario needs a new component (a `key`). The runner is
  * made once by a lazy `useState`, which keeps it for the component's lifetime as a ref would,
- * and is returned for tests and measurement; the controls call `controls`. `slower` says whether to show the ledger's
+ * and the controls reach it through `controls`. `slower` says whether to show the ledger's
  * RUNNING SLOWER THAN REQUESTED, from every frame rather than only the published ones.
  */
 export function useRunner(scenario: Scenario): {
   readonly view: RunnerView
-  readonly runner: Runner
   readonly controls: RunnerControls
   readonly slower: boolean
 } {
@@ -52,9 +51,17 @@ export function useRunner(scenario: Scenario): {
     play: () => runner.resume(),
     pause: () => runner.pause(),
     step: () => runner.step(),
-    reset: () => runner.reset(),
+    // A slider value still waiting would otherwise land at 0 of the new run, as a live change
+    // nobody made there.
+    reset: () => {
+      pending.take()
+      runner.reset()
+    },
     setSpeed: (speed) => runner.setSpeed(speed),
-    restart: (next) => runner.restart(next),
+    restart: (next) => {
+      runner.restart(next)
+      pending.take()
+    },
   }))
   const [view, setView] = useState(() => runner.view())
   const [slower, setSlower] = useState(false)
@@ -86,5 +93,5 @@ export function useRunner(scenario: Scenario): {
     }
   }, [runner, pending])
 
-  return { view, runner, controls, slower }
+  return { view, controls, slower }
 }

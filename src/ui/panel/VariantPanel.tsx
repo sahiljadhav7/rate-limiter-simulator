@@ -77,7 +77,7 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
           </label>
           <select
             id={retryId}
-            className="retry-select"
+            className="field"
             value={config.retry.retry}
             title="Changing it restarts the run from 0"
             onChange={(event) => onRetryMode(index, event.currentTarget.value as RetryMode)}

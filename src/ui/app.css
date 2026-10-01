@@ -32,6 +32,23 @@
   color: var(--text-dim);
 }
 
+/* A text field or select: the seed and the Retry Policy. */
+.field {
+  height: 32px;
+  padding: 0 var(--sp-2);
+  border: var(--bw) solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.field:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
 .page {
   display: grid;
   gap: var(--sp-3);
