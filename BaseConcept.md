@@ -75,7 +75,7 @@ The retry storm was demo item 2 until 2026-10-01; it is deferred to stretch (202
 - The simulation runs in each visitor's browser, so hosting cost does not scale with how heavily people use it. 10 users is negligible against the Hobby plan's 100 GB bandwidth.
 - Hobby is **non-commercial use only**. Fine for a free teaching tool and portfolio project; ads or paid tiers would need Pro or another host.
 - Add a `vercel.json` rewrite to `index.html` if using client-side routing, so deep links do not 404.
-- **Shareable state in the URL:** preset id, parameters and seed. Live slider moves are coalesced (at most one control event per 0.5 s of sim time), and the full control timeline is included only for scripted presets. Long custom runs export as a JSON file instead of a giant URL.
+- **Shareable state in the URL:** the setup, not the run: Scenario id, seed, each Variant's Retry Policy and the current Demand (`?s=backend-overload&seed=1&d=10&r=none.immediate`). A link opens at T 0, calm, ready to drag. A fresh run is exact in any browser, which a replayed run is not across JavaScript engines (narrowed on 2026-10-01, `.scratch/ship/spec.md` decision 2). Replaying a whole run from a link is out of scope; long custom runs would export as a JSON file instead.
 - No serverless functions or API routes, so no invocation limits to think about.
 - Escape hatch if ever needed: Cloudflare Pages (unmetered static bandwidth); a Vite static build moves over unchanged.
 
@@ -405,7 +405,7 @@ tests/
 | D4 | Baseline p99 = theoretical service-time p99; first 5 s are warm-up and excluded from diagnosis | Decided (RS-6, RS-24) |
 | D5 | Boundary-burst detection uses allowed-Attempt counts at window/10 resolution | Decided (RS-6, RS-24) |
 | D6 | Diagnosis ranking: Causes before Symptoms, fixed order among Symptoms, earliest Cause is the one Root Cause, all others Contributing | Decided (RS-24) |
-| D7 | URL stores preset + params + seed; slider moves coalesced; long runs export as JSON | Decided (RS-21) |
+| D7 | URL stores the setup (Scenario, seed, Retry Policies, Demand), not the run; a link opens at T 0. Narrowed 2026-10-01: a replayed run is not exact across JavaScript engines | Decided (RS-21) |
 | D8 | Engine runs on the main thread first; move to a Web Worker only if the event budget is hit in practice | Open |
 | D9 | Report end-to-end latency across retries (Succeeded Requests only) alongside Attempt latency | Decided (RS-6, RS-12) |
 | D10 | Leaky bucket is a bounded queue; the Limiter can answer Delay. The interface and `RELEASE` handling ship in Core even though leaky bucket is Stretch (ADR 0001) | Decided (RS-7, RS-9) |
