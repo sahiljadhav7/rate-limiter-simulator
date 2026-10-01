@@ -27,3 +27,6 @@ dist-ssr
 
 # Local tickets and specs (see docs/agents/issue-tracker.md)
 .scratch/
+
+# Session handoffs for the next agent, local only
+handoffs/
