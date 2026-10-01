@@ -1,0 +1,188 @@
+/* Charts (DESIGN.md "Charts"). Every colour is a token; series colours come in as props. */
+.chart {
+  margin: 0;
+}
+
+.chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  margin-bottom: var(--sp-1);
+}
+
+.chart-title {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-med);
+  letter-spacing: var(--tr-label);
+  line-height: var(--lh-label);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.chart-plot {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart-plot text {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-label);
+}
+
+.chart-surface {
+  fill: var(--surface);
+}
+
+.chart-grid {
+  stroke: var(--grid-major);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.chart-axis {
+  fill: var(--text-faint);
+}
+
+.chart-series {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-reference line {
+  stroke: var(--line-2);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.chart-reference text {
+  fill: var(--text-dim);
+  text-anchor: end;
+  /* A halo in the plot's colour, so a series line under the label never crosses its text. */
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.chart-marker line {
+  stroke: var(--danger-mark);
+  stroke-width: 1;
+}
+
+.chart-marker text {
+  fill: var(--danger);
+}
+
+.chart-warm-up > rect:first-child {
+  fill: var(--surface-2);
+}
+
+.chart-warm-up text {
+  fill: var(--text-faint);
+  font-weight: var(--fw-med);
+  letter-spacing: var(--tr-label);
+}
+
+.chart-over-limit {
+  fill: var(--danger-soft);
+}
+
+.chart-peak {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-num);
+  color: var(--danger);
+}
+
+.chart-pill {
+  fill: var(--surface);
+  stroke: var(--border);
+}
+
+.chart-marker .chart-pill {
+  stroke: var(--danger-mark);
+}
+
+.chart-box {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.chart-plot:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+.chart-crosshair {
+  stroke: var(--line-2);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+/* A small island (DESIGN.md "Hover"): surface, border and soft shadow. */
+.chart-tooltip {
+  position: absolute;
+  top: var(--sp-2);
+  min-width: 112px;
+  padding: var(--sp-1) var(--sp-2);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.chart-tooltip[data-side='right'] {
+  transform: translateX(var(--sp-2));
+}
+
+.chart-tooltip[data-side='left'] {
+  transform: translateX(calc(-100% - var(--sp-2)));
+}
+
+.chart-tooltip-time,
+.chart-tooltip-value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip-time {
+  color: var(--text-faint);
+}
+
+.chart-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.chart-tooltip-value {
+  color: var(--text);
+}

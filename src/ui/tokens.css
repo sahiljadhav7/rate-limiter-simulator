@@ -1,9 +1,11 @@
 /*
- * Design tokens from DESIGN.md. Only type, space and motion so far; the colour tokens, light
- * and dark, come with the first panels (RS-16), where DESIGN.md wants both themes generated
- * from one source.
+ * Design tokens from DESIGN.md, copied verbatim. The dark block is written twice, under the
+ * system preference and under data-theme="dark"; RS-17 generates both from one source so they
+ * cannot drift. Until then, change one only together with the other.
  */
 :root {
+  color-scheme: light;
+
   /* Type */
   --sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial,
@@ -56,11 +58,225 @@
   --dur-slow: 0.2s;
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out: cubic-bezier(0.16, 0.84, 0.44, 1);
+
+  /* Surfaces and lines */
+  --bg: #faf7f3;
+  --surface: #fffdfa;
+  --surface-2: #f7f3ee;
+  --surface-3: #f0ece5;
+  --border: #e8e2da;
+  --border-strong: #8e8a83;
+  --grid-line: #f1ece6;
+  --grid-major: #e7e2dc;
+  --line: #cfc8bf;
+  --line-2: #b3aba1;
+  --line-3: #948c82;
+  --line-4: #6f6a63;
+  --line-5: #545049;
+  --track: #ece7e0;
+  /* Text */
+  --text: #1e242e;
+  --text-dim: #525862;
+  --text-faint: #646972;
+  --text-on-fill: #fff;
+  /* Accent (interactive) */
+  --accent: #325cbd;
+  --accent-hover: #2a4fa5;
+  --accent-press: #23438c;
+  --accent-fg: #fff;
+  --accent-soft: #e3edff;
+  --accent-ink: #2d5277;
+  --accent-ring: #325cbd52;
+  /* State */
+  /* text */
+  --ok: #187a3b;
+  --warn: #945500;
+  --danger: #c52b30;
+  /* lines, fills, markers */
+  --ok-mark: #319751;
+  --warn-mark: #c57800;
+  --danger-mark: #d73337;
+  /* backgrounds */
+  --ok-soft: #e6f4ea;
+  --warn-soft: #fbeedb;
+  --danger-soft: #fdeceb;
+  /* Depth */
+  --shadow-sm: 0 1px 2px #3c322829;
+  --shadow-md: 0 1px 2px #3c32280d, 0 4px 10px #3c322812;
+  --shadow-lg: 0 2px 4px #3c32280d, 0 12px 28px #3c32281a;
+  --bevel: #ffffffe6;
+  --bevel-on-accent: #ffffff29;
+  --scrim: #3c322829;
+  /* Kinds: fill (background), line (edges, meters), stroke (outline), ink (text on fill) */
+  --kind-client-fill: #f2effe;
+  --kind-client-line: #b09de9;
+  --kind-client-stroke: #866fc2;
+  --kind-client-ink: #534775;
+  --kind-limiter-fill: #e9f5e9;
+  --kind-limiter-line: #7dbd7f;
+  --kind-limiter-stroke: #4b934f;
+  --kind-limiter-ink: #345b35;
+  --kind-backend-fill: #eaf2ff;
+  --kind-backend-line: #85abf0;
+  --kind-backend-stroke: #567fca;
+  --kind-backend-ink: #394f79;
+  --kind-queue-fill: #f5eefc;
+  --kind-queue-line: #c097df;
+  --kind-queue-stroke: #9769b8;
+  --kind-queue-ink: #5c446f;
+  --kind-retry-fill: #f8edfa;
+  --kind-retry-line: #cc93d4;
+  --kind-retry-stroke: #a365ac;
+  --kind-retry-ink: #634168;
+  --kind-store-fill: #e4f4fd;
+  --kind-store-line: #57b8e3;
+  --kind-store-stroke: #008cb9;
+  --kind-store-ink: #185771;
 }
 
-/* Base styles (DESIGN.md), without colour until the colour tokens exist. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #16151a;
+    --surface: #1d1c22;
+    --surface-2: #25242b;
+    --surface-3: #2f2e36;
+    --border: #302f38;
+    --border-strong: #6a6878;
+    --grid-line: #1e1d23;
+    --grid-major: #26252c;
+    --line: #4a4855;
+    --line-2: #615f6e;
+    --line-3: #807d8c;
+    --line-4: #a29fae;
+    --line-5: #c4c1cf;
+    --track: #2b2a32;
+    --text: #eceaf2;
+    --text-dim: #a8a5b4;
+    --text-faint: #8d8a99;
+    --text-on-fill: #16151a;
+    --accent: #6f9bf0;
+    --accent-hover: #87acf5;
+    --accent-press: #5b86dc;
+    --accent-fg: #16151a;
+    --accent-soft: #1b2740;
+    --accent-ink: #a9c6ff;
+    --accent-ring: #6f9bf061;
+    --ok: #4ac06e;
+    --warn: #d79a2b;
+    --danger: #f0656a;
+    --ok-mark: #3fae61;
+    --warn-mark: #c98a1c;
+    --danger-mark: #e2565c;
+    --ok-soft: #16301f;
+    --warn-soft: #332616;
+    --danger-soft: #3a1d1f;
+    --shadow-sm: 0 1px 2px #0006;
+    --shadow-md: 0 1px 2px #0000005c, 0 4px 10px #00000070;
+    --shadow-lg: 0 2px 4px #0000005c, 0 12px 28px #00000085;
+    --bevel: #ffffff12;
+    --bevel-on-accent: #ffffff24;
+    --scrim: #0000008f;
+    --kind-client-fill: #261e3a;
+    --kind-client-line: #7154b2;
+    --kind-client-stroke: #ac8ff9;
+    --kind-client-ink: #d4c7ff;
+    --kind-limiter-fill: #122a14;
+    --kind-limiter-line: #217d2d;
+    --kind-limiter-stroke: #60bd66;
+    --kind-limiter-ink: #b0e0b0;
+    --kind-backend-fill: #15243c;
+    --kind-backend-line: #3865ba;
+    --kind-backend-stroke: #6ea3ff;
+    --kind-backend-ink: #b5d2ff;
+    --kind-queue-fill: #2b1d37;
+    --kind-queue-line: #824da6;
+    --kind-queue-stroke: #c287ec;
+    --kind-queue-ink: #e1c3fa;
+    --kind-retry-fill: #2f1b33;
+    --kind-retry-line: #8f4799;
+    --kind-retry-stroke: #d182dc;
+    --kind-retry-ink: #ebc0f1;
+    --kind-store-fill: #022839;
+    --kind-store-line: #0075ab;
+    --kind-store-stroke: #00b4ee;
+    --kind-store-ink: #99dcfc;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #16151a;
+  --surface: #1d1c22;
+  --surface-2: #25242b;
+  --surface-3: #2f2e36;
+  --border: #302f38;
+  --border-strong: #6a6878;
+  --grid-line: #1e1d23;
+  --grid-major: #26252c;
+  --line: #4a4855;
+  --line-2: #615f6e;
+  --line-3: #807d8c;
+  --line-4: #a29fae;
+  --line-5: #c4c1cf;
+  --track: #2b2a32;
+  --text: #eceaf2;
+  --text-dim: #a8a5b4;
+  --text-faint: #8d8a99;
+  --text-on-fill: #16151a;
+  --accent: #6f9bf0;
+  --accent-hover: #87acf5;
+  --accent-press: #5b86dc;
+  --accent-fg: #16151a;
+  --accent-soft: #1b2740;
+  --accent-ink: #a9c6ff;
+  --accent-ring: #6f9bf061;
+  --ok: #4ac06e;
+  --warn: #d79a2b;
+  --danger: #f0656a;
+  --ok-mark: #3fae61;
+  --warn-mark: #c98a1c;
+  --danger-mark: #e2565c;
+  --ok-soft: #16301f;
+  --warn-soft: #332616;
+  --danger-soft: #3a1d1f;
+  --shadow-sm: 0 1px 2px #0006;
+  --shadow-md: 0 1px 2px #0000005c, 0 4px 10px #00000070;
+  --shadow-lg: 0 2px 4px #0000005c, 0 12px 28px #00000085;
+  --bevel: #ffffff12;
+  --bevel-on-accent: #ffffff24;
+  --scrim: #0000008f;
+  --kind-client-fill: #261e3a;
+  --kind-client-line: #7154b2;
+  --kind-client-stroke: #ac8ff9;
+  --kind-client-ink: #d4c7ff;
+  --kind-limiter-fill: #122a14;
+  --kind-limiter-line: #217d2d;
+  --kind-limiter-stroke: #60bd66;
+  --kind-limiter-ink: #b0e0b0;
+  --kind-backend-fill: #15243c;
+  --kind-backend-line: #3865ba;
+  --kind-backend-stroke: #6ea3ff;
+  --kind-backend-ink: #b5d2ff;
+  --kind-queue-fill: #2b1d37;
+  --kind-queue-line: #824da6;
+  --kind-queue-stroke: #c287ec;
+  --kind-queue-ink: #e1c3fa;
+  --kind-retry-fill: #2f1b33;
+  --kind-retry-line: #8f4799;
+  --kind-retry-stroke: #d182dc;
+  --kind-retry-ink: #ebc0f1;
+  --kind-store-fill: #022839;
+  --kind-store-line: #0075ab;
+  --kind-store-stroke: #00b4ee;
+  --kind-store-ink: #99dcfc;
+}
+
+/* Base styles (DESIGN.md). The graph paper comes with the panels (RS-17). */
 body {
   margin: 0;
+  color: var(--text);
+  background: var(--bg);
   font-family: var(--sans);
   font-size: var(--fs-base);
   font-weight: var(--fw-body);
@@ -72,4 +288,26 @@ body {
 
 .shell {
   padding: var(--sp-4);
+}
+
+/* Temporary layout until the panels (RS-17). */
+.variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-7);
+}
+
+.variant {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.variant-charts {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.sim-time span {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }

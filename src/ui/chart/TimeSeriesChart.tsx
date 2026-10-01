@@ -1,0 +1,321 @@
+import { memo, useId, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { WARM_UP_MS } from '../../sim/index.ts'
+import {
+  formatRatio,
+  gridValues,
+  hoverAt,
+  linearScale,
+  niceMax,
+  peakRatio,
+  timeDomain,
+  toAreas,
+  toPolylines,
+  VISIBLE_MS,
+  type Point,
+} from './geometry.ts'
+import './chart.css'
+
+/** One line on a chart. */
+export interface Series {
+  readonly id: string
+  /** Named in the legend and the summary, so colour is never the only way to tell lines apart. */
+  readonly label: string
+  readonly points: readonly Point[]
+  /** A CSS colour, always a token: `var(--danger-mark)`. */
+  readonly color: string
+  readonly dashed?: boolean
+  /** Stroke width in px; SERIES_WIDTH by default. */
+  readonly width?: number
+}
+
+/** A dashed horizontal line at a configured value, such as the limit, labelled at its right end. */
+export interface ReferenceLine {
+  readonly value: number
+  readonly label: string
+}
+
+/** A vertical line at a moment of the run, such as when a Finding started (RS-26). */
+export interface Marker {
+  /** Simulated time, in ms. */
+  readonly t: number
+  readonly label: string
+}
+
+/** Fills the area of one series above a limit, and labels its peak as a multiple of the limit. */
+export interface OverLimit {
+  readonly seriesId: string
+  readonly limit: number
+}
+
+/** What a chart draws. Everything but `title`, `nowMs`, `series` and `unit` is optional. */
+export interface TimeSeriesChartProps {
+  /** What the chart shows, as a label above it. */
+  readonly title: string
+  /** The current simulated time, in ms: the right end of the time axis once it scrolls. */
+  readonly nowMs: number
+  readonly series: readonly Series[]
+  readonly referenceLines?: readonly ReferenceLine[]
+  readonly markers?: readonly Marker[]
+  readonly overLimit?: OverLimit
+  /** Unit for the summary read by screen readers, such as "per second" or "milliseconds". */
+  readonly unit: string
+}
+
+/** The chart's size in px. The panels (RS-17) may make it fluid; the SVG scales down already. */
+const WIDTH = 520
+const HEIGHT = 140
+/** Room at the right edge for the axis labels, in px. */
+const AXIS_WIDTH = 40
+/** The highest and lowest y a value is drawn at, in px, leaving room for line caps. */
+const TOP = 8
+const BOTTOM = HEIGHT - 4
+/** Where the plot ends and the axis labels begin, in px. */
+const PLOT_RIGHT = WIDTH - AXIS_WIDTH
+
+/** A series' stroke width, in px (DESIGN.md "Charts"). */
+const SERIES_WIDTH = 1.5
+/** The dash pattern of a dashed series, such as Demand. */
+const SERIES_DASH = '4 3'
+
+/** Pill size in px: label type is 11 px mono, about 0.66 of that per character with tracking. */
+const PILL_CHAR_PX = 7.3
+const PILL_PADDING_PX = 10
+const PILL_HEIGHT = 13
+
+/** How wide a pill must be to hold `text`, in px. */
+function pillWidth(text: string): number {
+  return text.length * PILL_CHAR_PX + PILL_PADDING_PX
+}
+
+/** The newest non-null value of a series, or null if it has none yet. */
+function latest(points: readonly Point[]): number | null {
+  for (let i = points.length - 1; i >= 0; i--) {
+    const v = points[i]?.v
+    if (v !== null && v !== undefined) return v
+  }
+  return null
+}
+
+/** One simulated second along the plot, for moving the crosshair with the arrow keys, in px. */
+const KEY_STEP_PX = (PLOT_RIGHT * 1000) / VISIBLE_MS
+
+/**
+ * A value as text: whole numbers, or one decimal place below 10. `missing` is what to show
+ * when there is no value, never 0 (CLAUDE.md "The one rule").
+ */
+function asText(value: number | null, missing: string): string {
+  if (value === null) return missing
+  return value < 10 ? String(Math.round(value * 10) / 10) : String(Math.round(value))
+}
+
+/**
+ * A hand-drawn SVG chart of the last 60 simulated seconds (DESIGN.md "Charts"): horizontal
+ * gridlines, axis labels at the right edge, an inline legend, dashed reference lines, vertical
+ * markers, the warm-up shaded, and an `aria-label` saying what it shows now.
+ */
+export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesChartProps) {
+  const { title, nowMs, series, referenceLines = [], markers = [], overLimit, unit } = props
+  const clipId = useId()
+  /**
+   * Where the pointer or keyboard put the crosshair, in px along the plot. Kept as a position
+   * rather than a time, so the crosshair stays under the pointer while the chart scrolls.
+   */
+  const [hoverPx, setHoverPx] = useState<number | null>(null)
+  const domain = timeDomain(nowMs)
+  const x = linearScale(domain, [0, PLOT_RIGHT])
+  let highest = 0
+  for (const s of series) for (const p of s.points) if (p.v !== null && p.v > highest) highest = p.v
+  for (const line of referenceLines) highest = Math.max(highest, line.value)
+  const yMax = niceMax(highest)
+  const y = linearScale([0, yMax], [BOTTOM, TOP])
+  const warmUpEnd = x(Math.min(WARM_UP_MS, nowMs))
+  const showWarmUp = domain[0] < WARM_UP_MS && nowMs > 0
+  // The pill names the shading while it is all in view; once the chart scrolls, the strip
+  // narrows and a full-size pill would cover data from after the warm-up.
+  const showWarmUpPill = showWarmUp && domain[0] === 0
+
+  const limited = overLimit && series.find((s) => s.id === overLimit.seriesId)
+  const ratio =
+    overLimit && limited
+      ? peakRatio(
+          limited.points.flatMap((p) => (p.v === null ? [] : [p.v])),
+          overLimit.limit,
+        )
+      : null
+  /** The peak over the limit, as DESIGN.md writes it, or null when it stayed at or under. */
+  const peakText =
+    ratio !== null && ratio > 1 ? `peak ${formatRatio(ratio)} the limit in the last 60 s` : null
+
+  const hover =
+    hoverPx === null ? null : hoverAt(series, linearScale([0, PLOT_RIGHT], domain)(hoverPx))
+  const hoverX = hover === null ? 0 : x(hover.t)
+
+  function onPointerMove(event: PointerEvent<SVGSVGElement>) {
+    const box = event.currentTarget.getBoundingClientRect()
+    const px = ((event.clientX - box.left) * WIDTH) / box.width
+    setHoverPx(px <= PLOT_RIGHT ? Math.max(0, px) : null)
+  }
+
+  function onKeyDown(event: KeyboardEvent<SVGSVGElement>) {
+    const step = { ArrowLeft: -KEY_STEP_PX, ArrowRight: KEY_STEP_PX }[event.key]
+    if (step !== undefined) {
+      event.preventDefault()
+      setHoverPx((px) => Math.min(PLOT_RIGHT, Math.max(0, (px ?? PLOT_RIGHT) + step)))
+    } else if (event.key === 'Escape') {
+      setHoverPx(null)
+    }
+  }
+
+  const summary =
+    `${title}: ` +
+    series.map((s) => `${s.label} ${asText(latest(s.points), 'no value')}`).join(', ') +
+    (unit ? ` ${unit}` : '') +
+    referenceLines.map((line) => `; ${line.label} ${asText(line.value, 'no value')}`).join('') +
+    (peakText ? `; ${peakText}` : '')
+
+  return (
+    // As wide as the plot, so a long legend wraps rather than widening the column.
+    <figure className="chart" style={{ maxWidth: WIDTH }}>
+      <figcaption className="chart-head">
+        <span className="chart-title">{title}</span>
+        {peakText ? <span className="chart-peak">{peakText}</span> : null}
+        <ul className="chart-legend">
+          {series.map((s) => (
+            <li key={s.id}>
+              <svg width="16" height="8" aria-hidden="true">
+                <line
+                  x1="0"
+                  y1="4"
+                  x2="16"
+                  y2="4"
+                  stroke={s.color}
+                  strokeWidth={s.width ?? SERIES_WIDTH}
+                  strokeDasharray={s.dashed ? SERIES_DASH : undefined}
+                />
+              </svg>
+              {s.label}
+            </li>
+          ))}
+        </ul>
+      </figcaption>
+      <div className="chart-box">
+        <svg
+          className="chart-plot"
+          width={WIDTH}
+          height={HEIGHT}
+          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          role="img"
+          aria-label={summary}
+          // Focusable so the arrow keys can move the crosshair (DESIGN.md "Accessibility").
+          tabIndex={0}
+          onPointerMove={onPointerMove}
+          onPointerLeave={() => setHoverPx(null)}
+          onKeyDown={onKeyDown}
+          onBlur={() => setHoverPx(null)}
+        >
+          <rect className="chart-surface" x="0" y="0" width={PLOT_RIGHT} height={HEIGHT} />
+          {showWarmUp ? (
+            <g className="chart-warm-up">
+              <rect x="0" y="0" width={Math.max(0, warmUpEnd)} height={HEIGHT} />
+              {showWarmUpPill ? (
+                <>
+                  <rect
+                    className="chart-pill"
+                    x="3"
+                    y={TOP}
+                    width={pillWidth('WARM-UP')}
+                    height={PILL_HEIGHT}
+                    rx={PILL_HEIGHT / 2}
+                  />
+                  <text x={3 + PILL_PADDING_PX / 2} y={TOP + 9.5}>
+                    WARM-UP
+                  </text>
+                </>
+              ) : null}
+            </g>
+          ) : null}
+          {gridValues(yMax).map((value) => (
+            <g key={value}>
+              <line className="chart-grid" x1="0" x2={PLOT_RIGHT} y1={y(value)} y2={y(value)} />
+              <text className="chart-axis" x={PLOT_RIGHT + 6} y={y(value) + 3.5}>
+                {value}
+              </text>
+            </g>
+          ))}
+          {overLimit && limited && peakText ? (
+            <g>
+              <clipPath id={clipId}>
+                <rect x="0" y="0" width={PLOT_RIGHT} height={y(overLimit.limit)} />
+              </clipPath>
+              {toAreas(limited.points, x, y, BOTTOM).map((points) => (
+                <polygon
+                  key={points}
+                  className="chart-over-limit"
+                  clipPath={`url(#${clipId})`}
+                  points={points}
+                />
+              ))}
+            </g>
+          ) : null}
+          {referenceLines.map((line) => (
+            <g key={line.label} className="chart-reference">
+              <line x1="0" x2={PLOT_RIGHT} y1={y(line.value)} y2={y(line.value)} />
+              <text x={PLOT_RIGHT - 4} y={y(line.value) - 4}>
+                {line.label} {line.value}
+              </text>
+            </g>
+          ))}
+          {series.map((s) =>
+            toPolylines(s.points, x, y).map((points, i) => (
+              <polyline
+                key={`${s.id}-${i}`}
+                className="chart-series"
+                points={points}
+                stroke={s.color}
+                strokeWidth={s.width ?? SERIES_WIDTH}
+                strokeDasharray={s.dashed ? SERIES_DASH : undefined}
+              />
+            )),
+          )}
+          {markers
+            .filter((m) => m.t >= domain[0] && m.t <= domain[1])
+            .map((m) => (
+              <g key={`${m.t}-${m.label}`} className="chart-marker">
+                <line x1={x(m.t)} x2={x(m.t)} y1="0" y2={HEIGHT} />
+                <rect
+                  className="chart-pill"
+                  x={x(m.t) + 3}
+                  y={TOP}
+                  width={pillWidth(m.label)}
+                  height={PILL_HEIGHT}
+                  rx={PILL_HEIGHT / 2}
+                />
+                <text x={x(m.t) + 3 + PILL_PADDING_PX / 2} y={TOP + 9.5}>
+                  {m.label}
+                </text>
+              </g>
+            ))}
+          {hover ? (
+            <line className="chart-crosshair" x1={hoverX} x2={hoverX} y1="0" y2={HEIGHT} />
+          ) : null}
+        </svg>
+        {hover ? (
+          <div
+            className="chart-tooltip"
+            aria-hidden="true"
+            data-side={hoverX > PLOT_RIGHT / 2 ? 'left' : 'right'}
+            style={{ left: `${(hoverX / WIDTH) * 100}%` }}
+          >
+            <div className="chart-tooltip-time">{(hover.t / 1000).toFixed(1)} s</div>
+            {hover.values.map(({ label, v }) => (
+              <div key={label} className="chart-tooltip-row">
+                <span>{label}</span>
+                <span className="chart-tooltip-value">{asText(v, '–')}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </figure>
+  )
+})
