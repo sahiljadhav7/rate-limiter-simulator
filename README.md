@@ -6,7 +6,10 @@ A rate-limiting simulator for students. The same seeded traffic runs through two
 
 **Live:** [rate-limiter-simulator-zeta.vercel.app](https://rate-limiter-simulator-zeta.vercel.app/)
 
-![Backend overload: Demand is dragged from 10 to 40 Requests per second, and the sliding window counter's Backend turns red while the token bucket's stays blue](docs/backend-overload.gif)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/backend-overload-dark.gif">
+  <img alt="Backend overload: Demand is dragged from 10 to 40 Requests per second, and the sliding window counter's Backend turns red while the token bucket's stays blue" src="docs/backend-overload.gif">
+</picture>
 
 ## Motivation
 
