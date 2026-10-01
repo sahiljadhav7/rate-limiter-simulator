@@ -40,50 +40,46 @@ function worstFindings(scenario: Scenario, demandRps: number) {
  * A new rule can fire in Scenarios written for other rules, so every row runs every rule.
  */
 describe('Scenario Findings table', () => {
-  it('Backend overload at its default 60/s: stable, no Variant goes amber or red', () => {
-    expect(worstFindings(backendOverloadScenario, 60).map((row) => row.worst)).toEqual([
-      'none',
+  it('Backend overload at its default 10/s: stable, neither Variant goes amber or red', () => {
+    expect(worstFindings(backendOverloadScenario, 10).map((row) => row.worst)).toEqual([
       'none',
       'none',
     ])
   })
 
-  it('Backend overload at 120/s (2x): fixed window is already losing work', () => {
-    const [fixed, sliding, token] = worstFindings(backendOverloadScenario, 120)
-    expect(fixed?.worst).not.toBe('none')
-    expect([sliding?.worst, token?.worst]).toEqual(['none', 'none'])
+  it('Backend overload at 20/s (2x): sliding window counter is already losing work', () => {
+    const [sliding, token] = worstFindings(backendOverloadScenario, 20)
+    expect(sliding?.worst).not.toBe('none')
+    expect(token?.worst).toBe('none')
   })
 
-  it('Backend overload at 240/s (4x): fixed window fails, with queue overflow as the Root Cause', () => {
-    const [fixed, sliding, token] = worstFindings(backendOverloadScenario, 240)
-    expect(fixed).toMatchObject({ worst: 'broken', rootCauses: ['queue-overflow'] })
-    expect([sliding?.worst, token?.worst]).toEqual(['none', 'none'])
-  })
+  it.each([30, 40])(
+    'Backend overload at %s/s (3x, 4x): sliding window counter fails, with queue overflow as the Root Cause',
+    (demandRps) => {
+      const [sliding, token] = worstFindings(backendOverloadScenario, demandRps)
+      expect(sliding).toMatchObject({ worst: 'broken', rootCauses: ['queue-overflow'] })
+      expect(token?.worst).toBe('none')
+    },
+  )
 
-  it('Backend overload jumped from 60/s to 240/s: token bucket spends its saved 140 at once and fails briefly', () => {
-    // As a student drags the slider: 20 s at 60/s, so the token bucket is full, then 240/s.
+  it('Backend overload jumped from 10/s to 40/s: sliding window counter fails from then on, token bucket never', () => {
+    // As a student drags the slider: 20 s at the default, then four times it.
     const runner = createRunner(backendOverloadScenario, { eventBudget: Infinity })
     while (runner.view().simMs < 20_000) runner.tick(100)
-    runner.applyControl({ kind: 'demand', demandRps: 240 })
-    const brokenSeconds = [0, 0, 0]
-    let tokenLastBroken = 0
+    runner.applyControl({ kind: 'demand', demandRps: 40 })
+    const brokenSeconds = [0, 0]
     // One look per simulated second (a tick moves at most FRAME_CAP_MS, so ten ticks).
     for (let second = 21; second <= 80; second++) {
       while (runner.view().simMs < second * 1000) runner.tick(100)
       runner.view().variants.forEach(({ findings }, i) => {
         if (findings.some((f) => f.severity === 'broken')) {
           brokenSeconds[i] = (brokenSeconds[i] ?? 0) + 1
-          if (i === 2) tokenLastBroken = second
         }
       })
     }
-    const [fixed, sliding, token] = brokenSeconds
-    // Fixed window fails from the jump on; sliding counter never does.
-    expect(fixed).toBeGreaterThanOrEqual(58)
-    expect(sliding).toBe(0)
-    // Token bucket fails for about 5 s (the 5 s window holding the burst), then recovers.
-    expect(token).toBeGreaterThanOrEqual(3)
-    expect(tokenLastBroken).toBeLessThanOrEqual(30)
+    const [sliding, token] = brokenSeconds
+    expect(sliding).toBeGreaterThanOrEqual(55)
+    expect(token).toBe(0)
   })
 
   it('Edge burst at its default 4/s: the Backend copes with every burst, no Finding', () => {
