@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { createDiagnoser, type Finding } from '../src/sim/diagnosis.ts'
+import { createDiagnoser, type DiagnoserOptions, type Finding } from '../src/sim/diagnosis.ts'
 import type { Snapshot } from '../src/sim/metrics.ts'
+import type { AllowedSubBuckets } from '../src/sim/engine.ts'
+
+const options: DiagnoserOptions = {
+  backend: { slots: 4, queueLimit: 20, meanMs: 100, cv: 1 },
+  limiter: { algo: 'sliding-counter', keyBy: 'global', limit: 10, windowMs: 1000 },
+}
+const allowed: AllowedSubBuckets = { bucketMs: 100, counts: [] }
 
 /** A Snapshot ending at `t` (ms) with every count 0, plus `fields`. */
 function snapshot(t: number, fields: Partial<Snapshot> = {}): Snapshot {
@@ -33,11 +40,13 @@ function snapshot(t: number, fields: Partial<Snapshot> = {}): Snapshot {
 
 /** Feeds 1,000 allowed a second with `lost[i]` of them shed in second 6 + i, after warm-up. */
 function diagnose(lost: readonly number[], fields: Partial<Snapshot> = {}) {
-  const diagnoser = createDiagnoser({ queueLimit: 20 })
+  const diagnoser = createDiagnoser(options)
   const findings: (readonly Finding[])[] = []
-  for (let i = 1; i <= 5; i++) diagnoser.add(snapshot(i * 1000, { allowed: 1000, shed: 900 }))
+  for (let i = 1; i <= 5; i++) {
+    diagnoser.add(snapshot(i * 1000, { allowed: 1000, shed: 900 }), allowed)
+  }
   lost.forEach((shed, i) => {
-    diagnoser.add(snapshot((6 + i) * 1000, { allowed: 1000, shed, ...fields }))
+    diagnoser.add(snapshot((6 + i) * 1000, { allowed: 1000, shed, ...fields }), allowed)
     findings.push(diagnoser.findings())
   })
   return findings
@@ -46,8 +55,8 @@ const severityOf = (findings: readonly Finding[]) => findings[0]?.severity ?? 'h
 
 describe('the queue overflow rule', () => {
   it('ignores the warm-up, when every Backend sheds while its queue fills', () => {
-    // Warm-up seconds shed 90%, but nothing after: healthy.
-    expect(diagnose([0]).map(severityOf)).toEqual(['healthy'])
+    // Warm-up seconds shed 90%, but nothing in the first full window after it: healthy.
+    expect(diagnose([0, 0, 0, 0, 0]).map(severityOf)).toEqual(Array(5).fill('healthy'))
   })
 
   it.each([
@@ -65,7 +74,8 @@ describe('the queue overflow rule', () => {
       label: 'Queue overflow',
       kind: 'symptom',
       severity: 'broken',
-      startedAt: 6000,
+      // The first full window after the warm-up ends at 10 s (6 s before full windows).
+      startedAt: 10_000,
       role: 'root-cause',
       evidence: [
         { metric: 'Lost', value: '6.0%' },
@@ -85,13 +95,14 @@ describe('the queue overflow rule', () => {
   })
 
   it('averages over the last 5 seconds, so one bad second is not a failure', () => {
-    // One second at 6%, then none lost. Over the window: 6%, 3% (still above 2.5%, so it stays
-    // broken), 2%, 1.5%, 1.2% (warn), then 0% once that second leaves the window.
+    // One second at 6%, then none lost. Silent until the window is full at 10 s (before full
+    // windows, that second alone read 6% and broken), then 1.2% over the window: warn, not
+    // broken. 0% once that second leaves the window.
     expect(diagnose([60, 0, 0, 0, 0, 0]).map(severityOf)).toEqual([
-      'broken',
-      'broken',
-      'warn',
-      'warn',
+      'healthy',
+      'healthy',
+      'healthy',
+      'healthy',
       'warn',
       'healthy',
     ])
@@ -114,9 +125,11 @@ describe('the queue overflow rule', () => {
   })
 
   it('keeps startedAt from when it first appeared, through warn and broken', () => {
+    // First full window at 10 s: 220 of 5,000 lost, 4.4%, warn. At 11 s: 260, 5.2%, broken.
+    // (Before full windows these were 6 s and 8 s.)
     const findings = diagnose([20, 20, 60, 60, 60, 60])
-    expect(findings[0]?.[0]?.startedAt).toBe(6000)
-    expect(findings.at(-1)?.[0]).toMatchObject({ severity: 'broken', startedAt: 6000 })
+    expect(findings[4]?.[0]).toMatchObject({ severity: 'warn', startedAt: 10_000 })
+    expect(findings.at(-1)?.[0]).toMatchObject({ severity: 'broken', startedAt: 10_000 })
   })
 
   it('counts Attempts that timed out as lost too', () => {
@@ -125,9 +138,9 @@ describe('the queue overflow rule', () => {
   })
 
   it('finds nothing with no Snapshots, or with nothing sent to the Backend: no 0% or NaN share', () => {
-    expect(createDiagnoser({ queueLimit: 20 }).findings()).toEqual([])
-    const quiet = createDiagnoser({ queueLimit: 20 })
-    for (let i = 1; i <= 10; i++) quiet.add(snapshot(i * 1000))
+    expect(createDiagnoser(options).findings()).toEqual([])
+    const quiet = createDiagnoser(options)
+    for (let i = 1; i <= 10; i++) quiet.add(snapshot(i * 1000), allowed)
     expect(quiet.findings()).toEqual([])
   })
 })

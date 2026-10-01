@@ -504,11 +504,14 @@ describe('Findings', () => {
     const runner = createRunner(scenario, UNLIMITED)
     tickTo(runner, 20_000, [16, 33, 100])
     const { variants } = runner.view()
-    for (const variant of variants) {
-      const direct = createDiagnoser({ queueLimit: scenario.backend.queueLimit })
-      for (const snapshot of variant.snapshots) direct.add(snapshot)
+    variants.forEach((variant, i) => {
+      const limiter = scenario.variants[i]?.limiter
+      if (limiter === undefined) throw new Error(`No Variant ${i}`)
+      const direct = createDiagnoser({ backend: scenario.backend, limiter })
+      for (const snapshot of variant.snapshots) direct.add(snapshot, variant.allowedSubBuckets)
       expect(variant.findings).toEqual(direct.findings())
-    }
+      expect(variant.pastFindings).toEqual(direct.history())
+    })
     // The fixture's Backend serves 100 per second behind Limiters allowing 120: not vacuous.
     expect(variants.some((variant) => variant.findings.length > 0)).toBe(true)
   })

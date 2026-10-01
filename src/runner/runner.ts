@@ -17,6 +17,7 @@ import {
   type Diagnoser,
   type Engine,
   type Finding,
+  type PastFinding,
   type Snapshot,
   type Totals,
   type TrafficSource,
@@ -63,8 +64,10 @@ export interface VariantView {
   readonly totals: Totals
   /** Allowed Attempts per tenth of a window, for the boundary-burst chart (D5). */
   readonly allowedSubBuckets: AllowedSubBuckets
-  /** What diagnosis finds after the newest Snapshot. */
+  /** What diagnosis finds after the newest Snapshot, the Root Cause first. */
   readonly findings: readonly Finding[]
+  /** Every Finding that has cleared, so a chart can still mark where it started. */
+  readonly pastFindings: readonly PastFinding[]
 }
 
 /** What the UI reads after each frame. */
@@ -185,7 +188,7 @@ function startRun(scenario: Scenario): Run {
       streams: createStreams(scenario.seed),
       subBucketMs: subBucketMsFor(config.limiter),
     }),
-    diagnoser: createDiagnoser({ queueLimit: scenario.backend.queueLimit }),
+    diagnoser: createDiagnoser({ backend: scenario.backend, limiter: config.limiter }),
     diagnosed: 0,
   }))
   return { source, variants }
@@ -222,7 +225,7 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
       const snapshots = variant.engine.snapshots()
       while (variant.diagnosed < snapshots.length) {
         const snapshot = snapshots[variant.diagnosed++]
-        if (snapshot) variant.diagnoser.add(snapshot)
+        if (snapshot) variant.diagnoser.add(snapshot, variant.engine.allowedSubBuckets())
       }
     }
     simMs = untilMs
@@ -293,6 +296,7 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
           totals: engine.totals(),
           allowedSubBuckets: engine.allowedSubBuckets(),
           findings: diagnoser.findings(),
+          pastFindings: diagnoser.history(),
         })),
       }
     },

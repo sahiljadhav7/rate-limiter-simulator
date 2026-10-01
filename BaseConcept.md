@@ -150,7 +150,7 @@ The retry storm was demo item 2 until 2026-10-01; it is deferred to stretch (202
 
 ## Failure diagnosis ("what broke, why, how to fix")
 
-A `Diagnoser` in `src/sim/` reads the snapshot history once per simulated second on a rolling window and returns findings. Every finding is derived from measured values with explicit thresholds; nothing is hardcoded per scenario. The first 5 s (warm-up) are ignored.
+A `Diagnoser` in `src/sim/` reads the snapshot history once per simulated second on a rolling window and returns findings. Every finding is derived from measured values with explicit thresholds; nothing is hardcoded per scenario. The first 5 s (warm-up) are ignored, and every rule judges only full windows of the last 5 non-warm-up Snapshots, so a rule first judges at 10 s (a partial window let one burst second read as the whole window; `.scratch/diagnosis/spec.md` decision 3).
 
 ```ts
 interface Finding {
@@ -162,7 +162,11 @@ interface Finding {
   evidence: { metric: string; value: string }[];  // numbers that fired the rule
   why: string;                                    // template filled from evidence
   fixes: Fix[];                                   // ranked suggestions
-  role: 'root-cause' | 'contributing';            // exactly one root cause per diagnosis
+  role: 'root-cause' | 'contributing';            // set by ranking, not the rule; exactly one root cause
+}
+
+interface PastFinding extends Finding {
+  endedAt: number;                                // sim time it cleared; kept so charts still mark it
 }
 
 interface Fix {
@@ -184,11 +188,11 @@ interface Fix {
 | Limit too loose | Cause | limiter rejects ~0 but backend is saturated | Limit is above what the backend can serve, so the limiter protects nothing | Set limit <= backend capacity x safety factor |
 | Limit too tight | Cause | backend utilization < 40% while rejection rate > 30% | Legitimate traffic is rejected while capacity sits idle | Raise the limit, add burst allowance |
 | Backend saturation | Symptom | utilization >= 95% and p99 > 3x baseline p99 | Arrival rate is near or above capacity, so the queue grows and latency explodes | Lower the limit, add slots, add a cache |
-| Queue overflow / load shedding | Symptom | over the last 5 s, Attempts shed or timed out are >= 1% of those sent to the Backend (`warn`), >= 5% (`broken`); left below half of each (built early, 2026-10-01: `src/sim/diagnosis.ts`) | Queue hit its limit, so Attempts are shed | A Limiter that paces Attempts (small burst allowance), more slots or autoscale, bigger queue (with latency warning). Not a smaller limit: measured 2026-10-01, it stops the loss but lowers Goodput |
+| Queue overflow / load shedding | Symptom | over the last full 5 s, Attempts shed or timed out are >= 1% of those sent to the Backend (`warn`), >= 5% (`broken`); left below half of each (built early, 2026-10-01: `src/sim/diagnosis.ts`) | Queue hit its limit, so Attempts are shed | A Limiter that paces Attempts (small burst allowance), more slots or autoscale, bigger queue (with latency warning). Not a smaller limit: measured 2026-10-01, it stops the loss but lowers Goodput |
 | Goodput collapse | Symptom | Goodput < 50% of its own peak while backend utilization stays high | Backend is busy on Wasted Work: Attempts callers already abandoned | Shorter queue, timeouts and cancellation, shed earlier |
 
 ### Ranking and behavior
-- **Causes before Symptoms, one Root Cause.** Each Failure Mode is a Cause or a Symptom. Among Causes, the earliest `startedAt` is the Root Cause. If no Cause fires, the earliest Symptom is the Root Cause. Every other Finding is Contributing. Symptoms are listed in the fixed order saturation → queue overflow → goodput collapse. The timestamps are shown as evidence, so a reader can see when they disagree with the ordering.
+- **Causes before Symptoms, one Root Cause.** Each Failure Mode is a Cause or a Symptom. Among Causes, the earliest `startedAt` is the Root Cause. If no Cause fires, the first Symptom in the fixed order below is the Root Cause (D6; a saturated Backend is why its queue fills, whichever showed first). Every other Finding is Contributing. Symptoms are listed in the fixed order saturation → queue overflow → goodput collapse. The timestamps are shown as evidence, so a reader can see when they disagree with the ordering.
 - A finding fires once and clears with hysteresis to avoid flicker.
 - Fixes are phrased as "try", not "will", because they are suggestions for this simulated system.
 

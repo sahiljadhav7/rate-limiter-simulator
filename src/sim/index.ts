@@ -57,14 +57,15 @@ export {
 } from './traffic-source.ts'
 export {
   createDiagnoser,
-  HYSTERESIS_FRACTION,
-  LOSS_WINDOW_SNAPSHOTS,
+  DIAGNOSIS_WINDOW_SNAPSHOTS,
   QUEUE_OVERFLOW_BROKEN_SHARE,
+  QUEUE_OVERFLOW_HYSTERESIS_FRACTION,
   QUEUE_OVERFLOW_WARN_SHARE,
   type Diagnoser,
   type DiagnoserOptions,
   type FailureMode,
   type Finding,
   type Fix,
+  type PastFinding,
   type Severity,
 } from './diagnosis.ts'

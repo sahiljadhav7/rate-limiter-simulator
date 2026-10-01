@@ -1,13 +1,41 @@
 /**
  * Diagnosis: Findings worked out from a Variant's Snapshots with explicit thresholds, the same
- * for every Scenario (BaseConcept.md "Failure diagnosis"). It reads only Snapshots, so it is
- * as deterministic as the run. The first rule is queue overflow; the others (RS-24, RS-28)
- * add their own state beside it.
+ * for every Scenario (BaseConcept.md "Failure diagnosis"). It reads only Snapshots and the
+ * allowed-Attempt sub-buckets, so it is as deterministic as the run. A diagnoser runs a list
+ * of rules, one per Failure Mode, each with its own state and hysteresis, and ranks what they
+ * find: one Root Cause, every other Finding Contributing.
  */
+import type { BackendSpec } from './backend.ts'
+import type { AllowedSubBuckets } from './engine.ts'
+import type { LimiterSpec } from './limiter.ts'
 import type { Snapshot } from './metrics.ts'
 
 /** A named way the simulated system goes wrong. */
-export type FailureMode = 'queue-overflow'
+export type FailureMode = 'saturation' | 'queue-overflow' | 'boundary-burst' | 'retry-storm'
+
+/** A Cause is a design mistake; a Symptom is what it does to the system. */
+export type FindingKind = 'cause' | 'symptom'
+
+/**
+ * Each Failure Mode's label, and whether it is a Cause or a Symptom: fixed per mode, not per
+ * rule or per Finding (BaseConcept.md "Detection rules").
+ */
+export const FAILURE_MODES: Readonly<
+  Record<FailureMode, { readonly label: string; readonly kind: FindingKind }>
+> = {
+  saturation: { label: 'Backend saturation', kind: 'symptom' },
+  'queue-overflow': { label: 'Queue overflow', kind: 'symptom' },
+  'boundary-burst': { label: 'Boundary burst', kind: 'cause' },
+  'retry-storm': { label: 'Retry storm', kind: 'cause' },
+}
+
+/**
+ * The order Symptoms are listed in, and with no Cause, which one is the Root Cause: the first
+ * here (D6). Saturation comes first because a Backend that is busy all the time is why its
+ * queue fills; goodput collapse joins at the end with RS-28. A Symptom left out of this list
+ * is still listed, after these; a test checks every Symptom is here.
+ */
+export const SYMPTOM_ORDER: readonly FailureMode[] = ['saturation', 'queue-overflow']
 
 /** How bad a Finding is: `warn` is amber, `broken` is red. */
 export type Severity = 'warn' | 'broken'
@@ -21,8 +49,7 @@ export interface Fix {
 export interface Finding {
   readonly id: FailureMode
   readonly label: string
-  /** A Cause is a design mistake; a Symptom is what it does to the system. */
-  readonly kind: 'cause' | 'symptom'
+  readonly kind: FindingKind
   readonly severity: Severity
   /**
    * When it first appeared, in ms of simulated time: the end of that Snapshot. A Finding that
@@ -34,16 +61,27 @@ export interface Finding {
   readonly why: string
   /** Ranked, the most useful first. */
   readonly fixes: readonly Fix[]
-  /** With one rule there is one Finding, so it is the Root Cause; ranking comes with RS-24. */
+  /** Set by ranking, not by the rule: exactly one active Finding is the Root Cause. */
   readonly role: 'root-cause' | 'contributing'
 }
 
+/** An active Finding before ranking gives it a role. */
+type UnrankedFinding = Omit<Finding, 'role'>
+
+/** A Finding that has cleared, as it was last seen. */
+export interface PastFinding extends Finding {
+  /** When it cleared, in ms of simulated time: the end of the first Snapshot without it. */
+  readonly endedAt: number
+}
+
 /**
- * How many of the newest Snapshots the loss share covers: 5 seconds, the same span as the
- * panel's stats and the latency percentiles, long enough that one unlucky second does not
- * decide it.
+ * How many of the newest non-warm-up Snapshots every rule judges: 5 seconds, the same span as
+ * the panel's stats and the latency percentiles, long enough that one unlucky second does not
+ * decide it. Rules stay silent until there are this many, so a rule first judges at 10 s: a
+ * partial window right after the warm-up let one burst second read as the whole window (60%
+ * to 74% busy from a single second, .scratch/review/rule-probe.ts).
  */
-export const LOSS_WINDOW_SNAPSHOTS = 5
+export const DIAGNOSIS_WINDOW_SNAPSHOTS = 5
 
 /**
  * The share of Attempts sent to the Backend that it lost (shed because the queue was full, or
@@ -63,73 +101,97 @@ export const QUEUE_OVERFLOW_WARN_SHARE = 0.01
 export const QUEUE_OVERFLOW_BROKEN_SHARE = 0.05
 
 /**
- * A severity is left only once the share falls below this fraction of the threshold that
- * entered it (broken below 2.5%, warn below 0.5%), so a share hovering at a threshold does not
- * flicker between states.
+ * Queue overflow leaves a severity only once the share falls below this fraction of the
+ * threshold that entered it (broken below 2.5%, warn below 0.5%), so a share hovering at a
+ * threshold does not flicker between states.
  */
-export const HYSTERESIS_FRACTION = 0.5
+export const QUEUE_OVERFLOW_HYSTERESIS_FRACTION = 0.5
+
+/**
+ * What a rule detects in one full window: the parts of a Finding that come from its numbers.
+ * (Not a "verdict": CONTEXT.md keeps that word away from a Limiter Decision.)
+ */
+export interface Detection {
+  readonly severity: Severity
+  readonly evidence: Finding['evidence']
+  readonly why: string
+  readonly fixes: readonly Fix[]
+}
+
+/**
+ * One Failure Mode's detection. A rule keeps its own state, such as the severity it is in for
+ * hysteresis, so each diagnoser needs its own rules.
+ */
+export interface Rule {
+  readonly id: FailureMode
+  /**
+   * Judges the newest full window: `window` holds exactly DIAGNOSIS_WINDOW_SNAPSHOTS
+   * non-warm-up Snapshots, oldest first. `allowed` covers at least up to the newest
+   * Snapshot's end and may run past it, so a rule reads only the sub-buckets before that
+   * time. Null when the Failure Mode is not present.
+   */
+  judge(window: readonly Snapshot[], allowed: AllowedSubBuckets): Detection | null
+}
 
 /** What a diagnoser needs to know about the Variant beyond its Snapshots. */
 export interface DiagnoserOptions {
-  /** The Backend's queue limit, named in the Why. */
-  readonly queueLimit: number
+  /** The Scenario's Backend: its queue limit, and later its baseline p99. */
+  readonly backend: BackendSpec
+  /** The Variant's Limiter: whether it is a fixed window, with its limit and window. */
+  readonly limiter: LimiterSpec
 }
 
-/** Reads a Variant's Snapshots one at a time and keeps its active Findings. */
+/** Reads a Variant's Snapshots one at a time and keeps its Findings. */
 export interface Diagnoser {
-  /** The next Snapshot, in time order. Warm-up Snapshots are ignored. */
-  add(snapshot: Snapshot): void
-  /** The Findings active after the last Snapshot added. */
+  /**
+   * The next Snapshot, in time order, with the allowed-Attempt sub-buckets so far. Warm-up
+   * Snapshots are ignored.
+   */
+  add(snapshot: Snapshot, allowed: AllowedSubBuckets): void
+  /**
+   * The Findings active after the last Snapshot added: the Root Cause first, then the other
+   * Causes by `startedAt`, then the Symptoms in a fixed order.
+   */
   findings(): readonly Finding[]
+  /** Every Finding that has cleared, in the order they cleared. */
+  history(): readonly PastFinding[]
 }
 
 function percent(share: number): string {
   return `${(share * 100).toFixed(1)}%`
 }
 
-/** The severity after a Snapshot whose window lost `share`, given the one before. */
-function nextSeverity(current: Severity | null, share: number | null): Severity | null {
-  if (share === null) return null
-  const warn = QUEUE_OVERFLOW_WARN_SHARE
-  const broken = QUEUE_OVERFLOW_BROKEN_SHARE
-  if (share >= broken) return 'broken'
-  if (current === 'broken' && share >= broken * HYSTERESIS_FRACTION) return 'broken'
-  if (share >= warn) return 'warn'
-  if (current !== null && share >= warn * HYSTERESIS_FRACTION) return 'warn'
-  return null
-}
-
-export function createDiagnoser({ queueLimit }: DiagnoserOptions): Diagnoser {
-  const recent: Snapshot[] = []
+/** The queue overflow rule: the share of Attempts sent to the Backend that it lost. */
+export function queueOverflowRule({ queueLimit }: BackendSpec): Rule {
   let severity: Severity | null = null
-  let startedAt = 0
-  let finding: Finding | null = null
+
+  /** The severity after a window that lost `share`, given the one before. */
+  function nextSeverity(share: number | null): Severity | null {
+    if (share === null) return null
+    const warn = QUEUE_OVERFLOW_WARN_SHARE
+    const broken = QUEUE_OVERFLOW_BROKEN_SHARE
+    const margin = QUEUE_OVERFLOW_HYSTERESIS_FRACTION
+    if (share >= broken) return 'broken'
+    if (severity === 'broken' && share >= broken * margin) return 'broken'
+    if (share >= warn) return 'warn'
+    if (severity !== null && share >= warn * margin) return 'warn'
+    return null
+  }
 
   return {
-    add(snapshot) {
-      if (snapshot.warmUp) return
-      recent.push(snapshot)
-      if (recent.length > LOSS_WINDOW_SNAPSHOTS) recent.shift()
-      const sum = (pick: (s: Snapshot) => number) => recent.reduce((t, s) => t + pick(s), 0)
+    id: 'queue-overflow',
+    judge(window) {
+      const sum = (pick: (s: Snapshot) => number) => window.reduce((t, s) => t + pick(s), 0)
       // Attempts sent to the Backend: allowed now, or delayed and released later.
       const sent = sum((s) => s.allowed + s.delayed)
       const shed = sum((s) => s.shed)
       const timedOut = sum((s) => s.attemptsTimedOut)
       // With nothing sent for 5 s nothing can be lost, so there is no share and no Finding.
       const share = sent === 0 ? null : (shed + timedOut) / sent
-      const next = nextSeverity(severity, share)
-      if (next !== null && severity === null) startedAt = snapshot.t
-      severity = next
-      if (severity === null || share === null) {
-        finding = null
-        return
-      }
-      finding = {
-        id: 'queue-overflow',
-        label: 'Queue overflow',
-        kind: 'symptom',
+      severity = nextSeverity(share)
+      if (severity === null || share === null) return null
+      return {
         severity,
-        startedAt,
         evidence: [
           { metric: 'Lost', value: percent(share) },
           { metric: 'Shed', value: String(shed) },
@@ -151,11 +213,79 @@ export function createDiagnoser({ queueLimit }: DiagnoserOptions): Diagnoser {
           { text: 'Try more Backend slots' },
           { text: 'Try a bigger queue (Attempts wait longer)' },
         ],
-        role: 'root-cause',
       }
     },
+  }
+}
+
+/** The rules every Variant is diagnosed with. */
+export function defaultRules({ backend }: DiagnoserOptions): Rule[] {
+  return [queueOverflowRule(backend)]
+}
+
+/** Orders active Findings and sets their roles (D6, BaseConcept.md "Ranking and behavior"). */
+function rank(active: readonly UnrankedFinding[]): Finding[] {
+  // Array sort is stable, so Causes that started together keep the rules' order.
+  const causes = active.filter((f) => f.kind === 'cause').sort((a, b) => a.startedAt - b.startedAt)
+  const place = (id: FailureMode) => {
+    const i = SYMPTOM_ORDER.indexOf(id)
+    return i === -1 ? SYMPTOM_ORDER.length : i
+  }
+  const symptoms = active
+    .filter((f) => f.kind === 'symptom')
+    .sort((a, b) => place(a.id) - place(b.id))
+  return [...causes, ...symptoms].map((f, i) => ({
+    ...f,
+    role: i === 0 ? 'root-cause' : 'contributing',
+  }))
+}
+
+/**
+ * Creates a diagnoser for one Variant. `rules` are fresh ones for this diagnoser; tests pass
+ * stub rules to check ranking and windows on their own.
+ */
+export function createDiagnoser(
+  options: DiagnoserOptions,
+  rules: readonly Rule[] = defaultRules(options),
+): Diagnoser {
+  const window: Snapshot[] = []
+  /** Per rule, its Finding while active. */
+  const active = new Map<FailureMode, UnrankedFinding>()
+  // Replaced, not pushed to, so a view that kept the old list sees a new one when it changes.
+  let past: readonly PastFinding[] = []
+  let ranked: readonly Finding[] = []
+
+  return {
+    add(snapshot, allowed) {
+      if (snapshot.warmUp) return
+      window.push(snapshot)
+      if (window.length > DIAGNOSIS_WINDOW_SNAPSHOTS) window.shift()
+      if (window.length < DIAGNOSIS_WINDOW_SNAPSHOTS) return
+      for (const rule of rules) {
+        const detection = rule.judge(window, allowed)
+        const before = active.get(rule.id)
+        if (detection === null) {
+          if (before !== undefined) {
+            const last = ranked.find((f) => f.id === rule.id)
+            past = [...past, { ...before, role: last?.role ?? 'contributing', endedAt: snapshot.t }]
+            active.delete(rule.id)
+          }
+          continue
+        }
+        active.set(rule.id, {
+          id: rule.id,
+          ...FAILURE_MODES[rule.id],
+          ...detection,
+          startedAt: before?.startedAt ?? snapshot.t,
+        })
+      }
+      ranked = rank([...active.values()])
+    },
     findings() {
-      return finding === null ? [] : [finding]
+      return ranked
+    },
+    history() {
+      return past
     },
   }
 }

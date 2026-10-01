@@ -35,4 +35,28 @@ describe('nodeState', () => {
     // The Limiter is doing its job: a Backend Finding never colours it.
     expect(nodeState([overflow('broken')], 'limiter').severity).toBeNull()
   })
+
+  it('shows the worst Backend Finding, and the lost share even when the worst has none', () => {
+    const saturation: Finding = {
+      ...overflow('broken'),
+      id: 'saturation',
+      label: 'Backend saturation',
+      evidence: [{ metric: 'Busy', value: '97%' }],
+      role: 'contributing',
+    }
+    expect(nodeState([saturation, overflow('warn')], 'backend')).toEqual({
+      severity: 'broken',
+      word: 'FAILING',
+      lost: '24.0%',
+    })
+  })
+
+  it('puts a boundary burst on the Limiter and a retry storm on the Clients', () => {
+    const cause = (id: Finding['id']): Finding => ({ ...overflow('warn'), id, kind: 'cause' })
+    expect(nodeState([cause('boundary-burst')], 'limiter').severity).toBe('warn')
+    expect(nodeState([cause('retry-storm')], 'client').severity).toBe('warn')
+    expect(
+      nodeState([cause('boundary-burst'), cause('retry-storm')], 'backend').severity,
+    ).toBeNull()
+  })
 })

@@ -7,9 +7,16 @@ import type { FailureMode, Finding, Severity } from '../../sim/index.ts'
 
 export type PipelineNode = 'client' | 'limiter' | 'backend'
 
-/** The node each Failure Mode is about: queue overflow is the Backend losing work. */
+/**
+ * The node each Failure Mode is about: saturation and queue overflow are the Backend busy and
+ * losing work, a boundary burst is the Limiter letting too much through, and a retry storm is
+ * the Clients sending more.
+ */
 const NODE_OF: Readonly<Record<FailureMode, PipelineNode>> = {
+  saturation: 'backend',
   'queue-overflow': 'backend',
+  'boundary-burst': 'limiter',
+  'retry-storm': 'client',
 }
 
 const WORD: Readonly<Record<Severity, string>> = { warn: 'STRUGGLING', broken: 'FAILING' }
@@ -29,6 +36,7 @@ export function nodeState(findings: readonly Finding[], node: PipelineNode): Nod
   return {
     severity: worst.severity,
     word: WORD[worst.severity],
-    lost: worst.evidence.find((e) => e.metric === 'Lost')?.value ?? null,
+    // From whichever Finding measured it: the worst may be one without a Lost share.
+    lost: mine.flatMap((f) => f.evidence).find((e) => e.metric === 'Lost')?.value ?? null,
   }
 }
