@@ -576,3 +576,75 @@ describe('control timeline and replay', () => {
     )
   })
 })
+
+describe('trimming the log', () => {
+  const poisson: TrafficSpec = { shape: 'poisson', demandRps: 300, clients: ['a', 'b'] }
+  const STEP_MS = 50
+
+  /**
+   * Two readers at different paces, the slow one a whole second behind, read in 50 ms steps
+   * to 20 s. Returns everything each one read, and the log size seen after each step.
+   */
+  function readAtTwoPaces(trim: boolean) {
+    const source = createTrafficSource({ spec: poisson, stream: createRandomStream(4) })
+    const fast = source.reader()
+    const slow = source.reader()
+    const fastRead: Arrival[] = []
+    const slowRead: Arrival[] = []
+    const retained: number[] = []
+    for (let t = STEP_MS; t <= 20_000; t += STEP_MS) {
+      source.advanceTo(t)
+      fastRead.push(...fast.read(t))
+      if (t >= 1000) slowRead.push(...slow.read(t - 1000))
+      if (trim) source.trim()
+      retained.push(source.retainedArrivals())
+    }
+    slowRead.push(...slow.read(20_000))
+    return { fastRead, slowRead, retained }
+  }
+
+  it('leaves every reader returning exactly what it would have without trimming', () => {
+    const untrimmed = readAtTwoPaces(false)
+    const trimmed = readAtTwoPaces(true)
+    // Lengths first: a wrong read makes long arrays, and Vitest's diff of those takes minutes.
+    expect(trimmed.fastRead.length).toBe(untrimmed.fastRead.length)
+    expect(trimmed.slowRead.length).toBe(untrimmed.slowRead.length)
+    expect(trimmed.fastRead).toEqual(untrimmed.fastRead)
+    // The slow reader still got the entries it had not read when the fast one trimmed past them.
+    expect(trimmed.slowRead).toEqual(untrimmed.slowRead)
+    expect(untrimmed.slowRead.length).toBeGreaterThan(5000)
+  })
+
+  it('keeps the log bounded by what the slowest reader has not read', () => {
+    const untrimmed = readAtTwoPaces(false)
+    const { retained } = readAtTwoPaces(true)
+    // About 6,000 arrivals in 20 s. Untrimmed the log keeps them all; trimmed it keeps only
+    // the slow reader's last second, about 300 at 300 rps; 345 at most on this seed.
+    expect(untrimmed.retained.at(-1)).toBeGreaterThan(5500)
+    expect(Math.max(...retained)).toBeLessThan(450)
+    expect(Math.max(...retained)).toBeGreaterThan(200)
+  })
+
+  it('keeps request ids as positions in the whole log', () => {
+    const source = createTrafficSource({ spec: poisson, stream: createRandomStream(4) })
+    const reader = source.reader()
+    source.advanceTo(1000)
+    const first = reader.read(1000)
+    source.trim()
+    source.advanceTo(2000)
+    const second = reader.read(2000)
+    expect(source.retainedArrivals()).toBe(second.length)
+    expect(second[0]?.requestId).toBe(first.length)
+  })
+
+  it('throws a RangeError for a reader created after entries were trimmed', () => {
+    const source = createTrafficSource({ spec: poisson, stream: createRandomStream(4) })
+    const reader = source.reader()
+    source.advanceTo(1000)
+    source.trim()
+    // Nothing was read yet, so nothing was dropped and a new reader still sees it all.
+    expect(source.reader().read(1000)).toEqual(reader.read(1000))
+    source.trim()
+    expect(() => source.reader()).toThrow(RangeError)
+  })
+})

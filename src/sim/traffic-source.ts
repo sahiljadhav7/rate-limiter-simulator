@@ -7,8 +7,8 @@
  * is computed once and kept between calls. How a run is sliced into frames therefore never
  * changes the log (.scratch/traffic/spec.md, decisions 4 and 5).
  *
- * The log only grows: about 3.6 million entries per simulated hour at 1,000 rps. Trimming
- * entries every reader has passed is left to the runner (RS-15).
+ * The log grows by about 3.6 million entries per simulated hour at 1,000 rps, so the runner
+ * calls `trim()` to drop the entries every reader has already returned.
  */
 import { checkNonNegative, checkPositive, checkWholeNumber } from './checks.ts'
 import type { RandomStream } from './rng.ts'
@@ -59,8 +59,18 @@ export interface TrafficSource {
    * current horizon does nothing; moving backwards throws a RangeError.
    */
   advanceTo(untilMs: number): void
-  /** A new reader starting at the beginning of the log. */
+  /**
+   * A new reader starting at the beginning of the log. Throws a RangeError once `trim()` has
+   * dropped any entry, as the beginning is gone; create every reader before trimming.
+   */
   reader(): TrafficReader
+  /**
+   * Drops the entries every reader has already returned. Readers keep their place, and
+   * request ids stay positions in the whole log.
+   */
+  trim(): void
+  /** How many entries the log holds in memory: everything generated, less what was trimmed. */
+  retainedArrivals(): number
   /**
    * Applies a load change at the current horizon and records it. It affects arrivals after
    * the horizon; arrivals at exactly the horizon are already in the log. Throws a RangeError
@@ -201,6 +211,10 @@ export function createTrafficSource(options: TrafficSourceOptions): TrafficSourc
   let nextControl = 0
   let nextScripted = 0
   const log: Arrival[] = []
+  /** How many entries `trim()` has dropped from the front of `log`: log[i] is entry dropped + i. */
+  let dropped = 0
+  /** Each reader's next entry, as a position in the whole log. */
+  const cursors: { next: number }[] = []
   const applied: ControlEvent[] = []
   let horizon = 0
 
@@ -271,11 +285,11 @@ export function createTrafficSource(options: TrafficSourceOptions): TrafficSourc
       const controlAtMs = control?.atMs ?? Number.POSITIVE_INFINITY
       if (scriptedAtMs <= untilMs && scriptedAtMs <= pending.atMs && scriptedAtMs <= controlAtMs) {
         const { atMs, clientId } = scripted[nextScripted++] as { atMs: number; clientId: ClientId }
-        log.push({ requestId: log.length, atMs, clientId, origin: 'scripted' })
+        log.push({ requestId: dropped + log.length, atMs, clientId, origin: 'scripted' })
       } else if (pending.atMs <= untilMs && pending.atMs <= controlAtMs) {
         const atMs = pending.atMs
         const clientId = pickClient(shares, stream)
-        log.push({ requestId: log.length, atMs, clientId, origin: 'generated' })
+        log.push({ requestId: dropped + log.length, atMs, clientId, origin: 'generated' })
         pending = schedule(atMs)
       } else if (control !== undefined && controlAtMs <= untilMs) {
         nextControl++
@@ -306,17 +320,36 @@ export function createTrafficSource(options: TrafficSourceOptions): TrafficSourc
       return [...applied]
     },
     reader() {
-      let next = 0
+      if (dropped > 0) {
+        throw new RangeError(
+          `The log was trimmed past ${dropped} entries, so a new reader cannot start`,
+        )
+      }
+      const cursor = { next: 0 }
+      cursors.push(cursor)
       return {
         read(untilMs) {
           if (untilMs > horizon) {
             throw new RangeError(`Traffic is generated up to ${horizon} ms, asked for ${untilMs}`)
           }
-          const start = next
-          while (next < log.length && (log[next]?.atMs ?? Infinity) <= untilMs) next++
-          return log.slice(start, next)
+          const start = cursor.next - dropped
+          let end = start
+          while (end < log.length && (log[end]?.atMs ?? Infinity) <= untilMs) end++
+          cursor.next = dropped + end
+          return log.slice(start, end)
         },
       }
+    },
+    trim() {
+      // With no readers nothing has been returned, so there is nothing to drop.
+      if (cursors.length === 0) return
+      const passed = Math.min(...cursors.map((cursor) => cursor.next))
+      if (passed === dropped) return
+      log.splice(0, passed - dropped)
+      dropped = passed
+    },
+    retainedArrivals() {
+      return log.length
     },
   }
 }
