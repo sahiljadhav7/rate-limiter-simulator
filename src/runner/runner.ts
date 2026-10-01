@@ -42,8 +42,10 @@ export const SUB_STEP_MS = 50
 /**
  * The most events one frame handles by default, summed over every Variant. Past it the frame
  * ends early and the run goes slower than the speed asked for, rather than freezing the tab.
+ * Measured at about 870,000 events per second of wall time (three Variants at 1,000 rps), so
+ * 12,000 events take about 14 ms and still fit a 16.7 ms frame at 60 fps.
  */
-export const DEFAULT_EVENT_BUDGET = 20_000
+export const DEFAULT_EVENT_BUDGET = 12_000
 
 /** How fast simulated time runs against wall time. */
 export const SPEEDS = [0.5, 1, 10] as const
