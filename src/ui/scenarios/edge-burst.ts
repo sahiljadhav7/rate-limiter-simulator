@@ -31,8 +31,14 @@ export const edgeBurstScenario: Scenario = {
   id: 'edge-burst',
   title: 'Edge burst',
   lesson: 'Watch the fixed window let about twice its limit through across each window edge.',
-  models: 'One Limiter counting all Clients together, in front of one Backend.',
-  leavesOut: 'Retries, network latency and more than one Limiter node.',
+  why:
+    'It starts counting from zero at each edge, so 10 just before the edge and 10 just after ' +
+    'both fit. The sliding window counter still counts the window before, so it lets about 10 ' +
+    'through.',
+  models:
+    'One Limiter counting all Clients together, in front of one Backend. Light traffic, plus 30 ' +
+    'Requests 50 ms before a window edge and 30 just after, every 10 seconds.',
+  leavesOut: 'Retries unless you turn them on, network latency, and more than one Limiter node.',
   seed: 1,
   traffic: { shape: 'poisson', demandRps: 4, clients: ['a', 'b', 'c'] },
   scriptedArrivals: edgeBursts,

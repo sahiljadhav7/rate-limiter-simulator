@@ -1,0 +1,31 @@
+/*
+ * Handwritten notes (DESIGN.md "Handwritten note"): Caveat, self-hosted (.scratch/ship/spec.md
+ * decision 4), straight on the graph paper in --text. Only the Latin glyphs are bundled; the
+ * notes are English.
+ */
+@import '@fontsource/caveat/latin-400.css';
+@import '@fontsource/caveat/latin-700.css';
+
+.notes {
+  display: grid;
+  gap: var(--sp-2);
+  /* About 75 characters of Caveat at 20px a line, so a first note of 320 is four lines. */
+  max-width: 600px;
+  padding: 0 var(--sp-2);
+}
+
+.note {
+  margin: 0;
+  font-family: var(--hand);
+  font-size: 20px;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.note-small {
+  font-size: 17px;
+}
+
+.note strong {
+  font-weight: 700;
+}

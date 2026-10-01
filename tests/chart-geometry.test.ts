@@ -182,6 +182,7 @@ describe('rollingWindowCounts', () => {
     id: 'edge',
     title: 'Edge Burst',
     lesson: '',
+    why: '',
     models: '',
     leavesOut: '',
     seed: 1,

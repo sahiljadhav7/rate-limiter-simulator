@@ -42,6 +42,8 @@ export interface Scenario {
   readonly title: string
   /** What to watch. */
   readonly lesson: string
+  /** Why it happens, in plain words. */
+  readonly why: string
   /** What this models. */
   readonly models: string
   /** What it leaves out. */

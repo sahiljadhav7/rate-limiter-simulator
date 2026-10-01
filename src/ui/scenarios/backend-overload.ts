@@ -42,14 +42,17 @@ export const backendOverloadScenario: Scenario = {
   id: 'backend-overload',
   title: 'Backend overload',
   lesson:
-    "Both allow 70 a second, under the Backend's 80, and traffic comes in bursts. Watch the " +
-    'sliding window counter let a whole window of 70 through at the start of each burst, so the ' +
-    'queue overflows, while the token bucket lets them through one at a time. Raise Demand to ' +
-    'see it.',
+    "Both allow 70 a second, under the Backend's 80. Raise Demand to 30: the sliding window " +
+    "counter's Backend turns red, the token bucket's stays calm.",
+  why:
+    'After a quiet gap the counter lets a whole window of 70 in at once, too fast for the ' +
+    'Backend, so its queue overflows. The bucket holds 10, then lets them in one at a time.',
   models:
-    'One Limiter counting all Clients together, in front of one Backend with 4 slots, a queue ' +
-    'of 20, and service times that vary moderately around 50 ms. Traffic is on for 1 s, off for 4 s.',
-  leavesOut: 'Retries, network latency, and Backends that slow down as they fill.',
+    'One Limiter counting all Clients together, in front of one Backend with 4 slots and room ' +
+    'for 20 to wait. Each Attempt takes about 50 ms there, varying a little. Traffic comes for ' +
+    '1 s, then stops for 4 s.',
+  leavesOut:
+    'Retries unless you turn them on, network latency, and Backends that slow down as they fill.',
   seed: 1,
   traffic: {
     shape: 'bursty',

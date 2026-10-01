@@ -6,6 +6,7 @@ import { TopBarControls } from './controls/TopBarControls.tsx'
 import { ledgerLine, SLOWER_NOTICE } from './ledger.ts'
 import { VariantPanel } from './panel/VariantPanel.tsx'
 import { SCENARIOS } from './scenarios/index.ts'
+import { ScenarioNotes } from './notes/ScenarioNotes.tsx'
 import { ShareButton } from './share/ShareButton.tsx'
 import { parseShareState, shareUrl } from './share/url-state.ts'
 import { useRunner, type RunnerControls } from './use-runner.ts'
@@ -138,6 +139,7 @@ function ScenarioRun(props: {
           ) : null
         })}
       </main>
+      <ScenarioNotes scenario={scenario} />
       <footer className="ledger">
         <span data-testid="ledger-line">
           {ledgerLine({

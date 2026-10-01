@@ -16,6 +16,7 @@ const scenario: Scenario = {
   id: 'runner-test',
   title: 'Runner test',
   lesson: 'None: a test fixture.',
+  why: 'It only exists to be run.',
   models: 'Three Limiters in front of one small Backend.',
   leavesOut: 'Everything a lesson would need.',
   seed: 11,

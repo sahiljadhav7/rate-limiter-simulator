@@ -152,7 +152,7 @@ The two blocks above are the source of truth for each theme's values. In `src/ui
 
 **Chart.** Hand-drawn SVG (see the Charts section).
 
-**Handwritten note.** Scenario explanations in `--hand` at about 20px, colour `--text`, sitting directly on the graph paper with no island around them, placed beside what they explain. Keep each note to two to four short lines. Load Caveat (weights 400 to 700) self-hosted, with `font-display: swap`.
+**Handwritten note.** Scenario explanations in `--hand` at about 20px, colour `--text`, sitting directly on the graph paper with no island around them, placed beside what they explain. Keep each note to two to four short lines. Each Scenario has two, below the panels and at most 600px wide: what you're seeing and why at 20px, then what this models and leaves out at 17px, with its two labels in weight 700. Load Caveat (weights 400 and 700, Latin only) self-hosted with `@fontsource/caveat`, with `font-display: swap`.
 
 **Ledger.** A single-line status strip at the bottom-left: mono, `--fs-label`, uppercase, `--text-faint`, on `--surface` with a `--border` outline and radius `--r-btn`. Content: `3 VARIANTS · SEED 42 · T 64.2s · 1× · 18,204 EVENTS`. When the event budget is hit it adds `RUNNING SLOWER THAN REQUESTED` in `--warn`.
 

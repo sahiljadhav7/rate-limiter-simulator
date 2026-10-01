@@ -5,6 +5,7 @@ const scenario: Scenario = {
   id: 'edge-burst',
   title: 'Edge burst',
   lesson: 'Watch the fixed window let through twice its limit across the edge.',
+  why: 'The counter resets at the edge, so a burst on either side gets two windows of room.',
   models: 'One global Limiter in front of one Backend.',
   leavesOut: 'Network latency and more than one Limiter node.',
   seed: 7,
