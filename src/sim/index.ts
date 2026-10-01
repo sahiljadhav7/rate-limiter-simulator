@@ -37,6 +37,7 @@ export { WARM_UP_MS, type Snapshot } from './metrics.ts'
 export { checkRetryPolicy, type RetryPolicy } from './retry-policy.ts'
 export {
   createStreams,
+  MAX_SEED,
   STREAM_NAMES,
   type RandomStream,
   type RandomStreams,

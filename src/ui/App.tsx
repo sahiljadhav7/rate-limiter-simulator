@@ -1,23 +1,48 @@
-import type { CSSProperties } from 'react'
+import { useCallback, useState, type CSSProperties } from 'react'
+import type { Scenario } from '../runner/scenario.ts'
+import { demandAt } from './controls/demand.ts'
+import { TopBarControls } from './controls/TopBarControls.tsx'
 import { edgeBurstScenario } from './edge-burst-scenario.ts'
 import { ledgerLine, SLOWER_NOTICE } from './ledger.ts'
 import { VariantPanel } from './panel/VariantPanel.tsx'
 import { useRunner } from './use-runner.ts'
 import './app.css'
 
-// Until the Scenario picker (RS-18): the Edge burst Scenario, one panel per Variant.
-const scenario = edgeBurstScenario
-
+/**
+ * The page: the Edge burst Scenario until the Scenario picker (RS-19a), one panel per Variant.
+ * The Scenario is state because a seed or Retry Policy change edits it and restarts the run.
+ */
 export function App() {
-  const { view, slower } = useRunner(scenario)
+  const [scenario, setScenario] = useState<Scenario>(edgeBurstScenario)
+  const { view, controls, slower } = useRunner(edgeBurstScenario)
+  /** Restarts the run on `next`, then shows it; the runner throws first if `next` cannot run. */
+  const restartWith = useCallback(
+    (next: Scenario) => {
+      controls.restart(next)
+      setScenario(next)
+    },
+    [controls],
+  )
+  const onSeed = useCallback(
+    (seed: number) => restartWith({ ...scenario, seed }),
+    [restartWith, scenario],
+  )
   return (
     <div className="page">
       <header className="top-bar">
-        {/* The Demand, transport and speed island (RS-18) and Share (RS-21) go beside this. */}
+        {/* Share and the menu (RS-21) go after these. */}
         <div className="island top-bar-name">
           <span className="app-name">Ratescale</span>
           <span className="scenario-title">{scenario.title}</span>
         </div>
+        <TopBarControls
+          controls={controls}
+          demandRps={demandAt(scenario.traffic.demandRps, view.timeline, view.simMs)}
+          paused={view.paused}
+          speed={view.speed}
+          seed={scenario.seed}
+          onSeed={onSeed}
+        />
       </header>
       <main className="panels" style={{ '--columns': scenario.variants.length } as CSSProperties}>
         {scenario.variants.map((config, i) => {

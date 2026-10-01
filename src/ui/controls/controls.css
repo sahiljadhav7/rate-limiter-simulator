@@ -1,0 +1,224 @@
+/* Top bar controls (DESIGN.md "Button", "Slider (Demand)", "Accessibility"). Colours are tokens. */
+.top-bar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-5);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border: var(--bw) solid var(--border-strong);
+  border-radius: var(--r-btn);
+  background: var(--surface);
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 var(--bevel);
+  color: var(--text);
+  font: inherit;
+  font-weight: var(--fw-med);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--line-5);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.btn:focus-visible,
+.top-bar-controls input:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+.btn-icon {
+  width: 36px;
+  padding: 0;
+}
+
+.btn-segment {
+  min-width: 44px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-segment[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/* Grouped buttons share borders and round only the outer corners. */
+.button-group {
+  display: inline-flex;
+}
+
+.button-group .btn:not(:first-child) {
+  margin-left: calc(-1 * var(--bw));
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.button-group .btn:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.button-group .btn:focus-visible {
+  position: relative;
+}
+
+.demand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.demand-readout {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  column-gap: var(--sp-1);
+}
+
+.demand-readout .label {
+  grid-column: 1 / -1;
+}
+
+.demand-value {
+  min-width: 3.2em;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-num);
+  letter-spacing: var(--tr-lg);
+  line-height: var(--lh-num);
+  text-align: right;
+}
+
+.demand-track {
+  position: relative;
+  width: 220px;
+  padding-bottom: 16px;
+}
+
+.demand-track input {
+  display: block;
+  width: 100%;
+  height: var(--thumb);
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+
+.demand-track input::-webkit-slider-runnable-track {
+  height: var(--track-h);
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fill, 0%),
+    var(--track) var(--fill, 0%)
+  );
+}
+
+.demand-track input::-moz-range-track {
+  height: var(--track-h);
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fill, 0%),
+    var(--track) var(--fill, 0%)
+  );
+}
+
+.demand-track input::-webkit-slider-thumb {
+  width: var(--thumb);
+  height: var(--thumb);
+  margin-top: calc((var(--track-h) - var(--thumb)) / 2);
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  appearance: none;
+}
+
+.demand-track input::-moz-range-thumb {
+  width: var(--thumb);
+  height: var(--thumb);
+  box-sizing: border-box;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Tick labels under the track, each centred on its value. */
+.demand-ticks span {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  line-height: 1;
+  color: var(--text-faint);
+}
+
+/* Keep the end labels inside the track. */
+.demand-ticks span:first-child {
+  transform: none;
+}
+
+.demand-ticks span:last-child {
+  transform: translateX(-100%);
+}
+
+.seed {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.seed-input {
+  width: 11ch;
+  height: 32px;
+  padding: 0 var(--sp-2);
+  border: var(--bw) solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+}
+
+.seed-input[aria-invalid='true'] {
+  border-color: var(--danger-mark);
+}
+
+.seed-message {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+}
