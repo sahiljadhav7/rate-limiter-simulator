@@ -112,12 +112,22 @@
   cursor: pointer;
 }
 
+/*
+ * The pill is drawn 18px tall but takes clicks over 32px (DESIGN.md "Accessibility"): the
+ * inset counts from inside its 1px border, so 8px each way reaches 7px past the edge.
+ */
+.chart-marker-pill::before {
+  content: '';
+  position: absolute;
+  inset: -8px 0;
+}
+
 .chart-marker-pill:hover {
   background: var(--danger-soft);
 }
 
 .chart-marker-pill:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-ring);
   outline-offset: 2px;
 }
 

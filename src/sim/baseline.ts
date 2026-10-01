@@ -17,6 +17,16 @@ const BISECTION_TOLERANCE = 1e-9
 /** Series and continued fraction stop when a term changes the result by less than this. */
 const SERIES_EPSILON = 1e-15
 
+/**
+ * The most terms either takes. For cv 0.25 to 4 (shapes 16 down to 1/16), and x up to 200,
+ * neither needs more than 72 (.scratch/diagnosis/terms-probe.ts); the cap only keeps a bad
+ * input from looping forever.
+ */
+const MAX_TERMS = 10_000
+
+/** Stands in for 0 in Lentz's method, where a divisor of exactly 0 would break it. */
+const LENTZ_TINY = 1e-300
+
 /** Lanczos coefficients (g = 7, n = 9), good to about 15 significant digits. */
 const LANCZOS = [
   0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
@@ -45,25 +55,24 @@ function regularizedGammaP(a: number, x: number): number {
   if (x < a + 1) {
     let term = 1 / a
     let sum = term
-    for (let n = 1; n < 10_000 && Math.abs(term) > Math.abs(sum) * SERIES_EPSILON; n++) {
+    for (let n = 1; n < MAX_TERMS && Math.abs(term) > Math.abs(sum) * SERIES_EPSILON; n++) {
       term *= x / (a + n)
       sum += term
     }
     return front * sum
   }
   // Q(a, x) by Lentz's method, then P = 1 - Q.
-  const tiny = 1e-300
   let b = x + 1 - a
-  let c = 1 / tiny
+  let c = 1 / LENTZ_TINY
   let d = 1 / b
   let h = d
-  for (let i = 1; i < 10_000; i++) {
+  for (let i = 1; i < MAX_TERMS; i++) {
     const an = -i * (i - a)
     b += 2
     d = an * d + b
-    if (Math.abs(d) < tiny) d = tiny
+    if (Math.abs(d) < LENTZ_TINY) d = LENTZ_TINY
     c = b + an / c
-    if (Math.abs(c) < tiny) c = tiny
+    if (Math.abs(c) < LENTZ_TINY) c = LENTZ_TINY
     d = 1 / d
     const delta = d * c
     h *= delta

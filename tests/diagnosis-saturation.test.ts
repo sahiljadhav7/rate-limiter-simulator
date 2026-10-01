@@ -67,7 +67,7 @@ describe('the saturation rule', () => {
     [0.97, 600, 'warn'], // busy enough for broken, but only 2.6x
     [0.97, 400, 'healthy'], // busy but quick: a Backend doing its job at full use
     [0.7, 800, 'healthy'], // slow but not busy: not saturation
-    [0.97, null, 'healthy'], // nothing completed, so no p99 to judge
+    [0.97, null, 'healthy'], // nothing finished in time, so no p99 to enter on
   ] as const)('busy %s with p99 %s ms is %s', (busy, p99, severity) => {
     expect(severities(repeat(5, [busy, p99] as const)).at(-1)).toBe(severity)
   })
@@ -92,6 +92,28 @@ describe('the saturation rule', () => {
     ])
   })
 
+  it('stays while a held Backend is so stalled that nothing finishes in time, with a dash for p99', () => {
+    // Broken, then 5 s with every Attempt given up on (no p99) at 99% busy: still broken. Then
+    // the Backend empties (50% busy): it clears.
+    const result = severities([
+      ...repeat(5, [0.97, 800] as const),
+      ...repeat(5, [0.99, null] as const),
+      ...repeat(5, [0.5, null] as const),
+    ])
+    expect([4, 9, 14].map((i) => result[i])).toEqual(['broken', 'broken', 'healthy'])
+    const diagnoser = createDiagnoser(
+      { backend, limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 } },
+      [saturationRule(backend)],
+    )
+    for (let i = 0; i < 5; i++) diagnoser.add(snapshot((6 + i) * 1000, 0.97, 800), allowed)
+    diagnoser.add(snapshot(11_000, 0.99, null), allowed)
+    const [finding] = diagnoser.findings()
+    expect(finding?.evidence.slice(1).map((e) => e.value)).toEqual(['–', '230 ms', '–'])
+    expect(finding?.why).toBe(
+      'The Backend was busy 97.4% of the time, and no Attempt finished before its caller gave up waiting for a slot.',
+    )
+  })
+
   it('names the evidence and says why from the numbers', () => {
     const diagnoser = createDiagnoser(
       { backend, limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 } },
@@ -106,9 +128,9 @@ describe('the saturation rule', () => {
       severity: 'broken',
       evidence: [
         { metric: 'Busy', value: '98.0%' },
-        { metric: 'p99 latency', value: '806 ms' },
-        { metric: 'Baseline p99', value: '230 ms' },
-        { metric: 'p99 / baseline', value: '3.5×' },
+        { metric: 'Slowest 1 in 100 (p99)', value: '806 ms' },
+        { metric: 'Its work alone (baseline p99)', value: '230 ms' },
+        { metric: 'Against the baseline', value: '3.5×' },
       ],
     })
     expect(finding?.why).toBe(

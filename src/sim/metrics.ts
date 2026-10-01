@@ -40,9 +40,9 @@ export interface Snapshot {
   /** Attempts reaching the Limiter, retries included. */
   readonly offeredLoad: number
   /** Attempts after a Request's first: Offered Load minus this second's new Requests. */
-  readonly retries: number
+  readonly retryAttempts: number
   /** Retries that started less than QUICK_RETRY_MS after the failure that caused them. */
-  readonly quickRetries: number
+  readonly quickRetryAttempts: number
   /** Limiter Decisions made this second. */
   readonly allowed: number
   readonly rejected: number
@@ -121,8 +121,8 @@ function createLatencyWindow() {
 export interface Counts {
   demand: number
   offeredLoad: number
-  retries: number
-  quickRetries: number
+  retryAttempts: number
+  quickRetryAttempts: number
   allowed: number
   rejected: number
   delayed: number
@@ -136,8 +136,8 @@ function emptyCounts(): Counts {
   return {
     demand: 0,
     offeredLoad: 0,
-    retries: 0,
-    quickRetries: 0,
+    retryAttempts: 0,
+    quickRetryAttempts: 0,
     allowed: 0,
     rejected: 0,
     delayed: 0,
@@ -195,8 +195,8 @@ export function createMetricsCollector(subBucketMs: number) {
     },
     /** A retry Attempt is starting, `waitedMs` after the failure that caused it. */
     retried(waitedMs: number): void {
-      add((c) => c.retries++)
-      if (waitedMs < QUICK_RETRY_MS) add((c) => c.quickRetries++)
+      add((c) => c.retryAttempts++)
+      if (waitedMs < QUICK_RETRY_MS) add((c) => c.quickRetryAttempts++)
     },
     allowed(clientId: ClientId, nowMs: number): void {
       add((c) => c.allowed++)

@@ -91,7 +91,8 @@ function unitGamma(shape: number, stream: RandomStream): number {
 /**
  * One service time in ms: gamma with shape 1 / cv^2 and scale mean x cv^2, which has the
  * asked mean and cv. Gamma is always positive and its right tail grows with cv, which is how
- * real service times look. cv 0 takes exactly the mean and makes no draw.
+ * real service times look. cv 0 takes exactly the mean and makes no draw. Exported so a test
+ * can check `baselineP99Ms` against the very draws the Backend makes.
  */
 export function serviceTimeMs(spec: BackendSpec, stream: RandomStream): number {
   if (spec.cv === 0) return spec.meanMs

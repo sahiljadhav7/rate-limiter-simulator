@@ -18,7 +18,8 @@ export const SEVERITY_NAMES: Readonly<Record<Severity, string>> = {
 
 /**
  * Whether two lists of Findings would draw the same cards. The runner hands out new objects
- * as Snapshots close, so the card compares what it shows instead of the references.
+ * as Snapshots close, so the card compares what it shows instead of the references. A field
+ * the card starts to show must be compared here too, or the card will not update for it.
  */
 export function sameFindings(a: readonly Finding[], b: readonly Finding[]): boolean {
   if (a.length !== b.length) return false
@@ -66,7 +67,6 @@ export interface FindingMarker {
   readonly label: string
   /** The card's id while the Finding is active; the panel's once it has ended. */
   readonly targetId: string
-  readonly ended: boolean
 }
 
 /**
@@ -79,12 +79,11 @@ export function findingMarkers(
   panelId: string,
 ): FindingMarker[] {
   return [
-    ...past.map((f) => ({ t: f.startedAt, label: f.label, targetId: panelId, ended: true })),
+    ...past.map((f) => ({ t: f.startedAt, label: f.label, targetId: panelId })),
     ...active.map((f) => ({
       t: f.startedAt,
       label: f.label,
       targetId: findingAnchorId(panelId, f.id),
-      ended: false,
     })),
   ].sort((a, b) => a.t - b.t)
 }

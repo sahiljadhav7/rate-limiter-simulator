@@ -29,25 +29,25 @@ function totals(retry: RetryPolicy) {
   while (runner.view().simMs < 20_000) runner.tick(100)
   const snapshots = runner.view().variants[0]?.snapshots ?? []
   const sum = (pick: (s: Snapshot) => number) => snapshots.reduce((n, s) => n + pick(s), 0)
-  return { retries: sum((s) => s.retries), quick: sum((s) => s.quickRetries) }
+  return { retryAttempts: sum((s) => s.retryAttempts), quick: sum((s) => s.quickRetryAttempts) }
 }
 
 describe('retries and quick retries per Snapshot', () => {
   it(`counts a retry as quick when it started under ${QUICK_RETRY_MS} ms after its failure`, () => {
     const immediate = totals({ timeoutMs: 500, maxAttempts: 3, retry: 'immediate' })
-    expect(immediate.retries).toBeGreaterThan(1000)
-    expect(immediate.quick).toBe(immediate.retries)
+    expect(immediate.retryAttempts).toBeGreaterThan(1000)
+    expect(immediate.quick).toBe(immediate.retryAttempts)
   })
 
   it('counts no retry as quick when every one waits at least the base delay', () => {
     const backoff = totals({ timeoutMs: 500, maxAttempts: 3, retry: 'backoff', baseDelayMs: 100 })
-    expect(backoff.retries).toBeGreaterThan(1000)
+    expect(backoff.retryAttempts).toBeGreaterThan(1000)
     expect(backoff.quick).toBe(0)
   })
 
   it('counts nothing with no retry', () => {
     expect(totals({ timeoutMs: 500, maxAttempts: 1, retry: 'none' })).toEqual({
-      retries: 0,
+      retryAttempts: 0,
       quick: 0,
     })
   })
@@ -61,6 +61,6 @@ describe('retries and quick retries per Snapshot', () => {
       baseDelayMs: 100,
     })
     expect(jitter.quick).toBeGreaterThan(0)
-    expect(jitter.quick / jitter.retries).toBeLessThan(0.2)
+    expect(jitter.quick / jitter.retryAttempts).toBeLessThan(0.2)
   })
 })

@@ -352,7 +352,7 @@
 /* A marker pill moves focus to a card, or to the panel once its Finding has ended. */
 .panel:focus-visible,
 .diagnosis-card:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-ring);
   outline-offset: 2px;
 }
 
@@ -416,8 +416,9 @@
   padding-left: var(--sp-5);
 }
 
+/* Through the slot as well, or the entrance rule above outranks it and cards still slide. */
 @media (prefers-reduced-motion: reduce) {
-  .diagnosis-card {
+  .diagnosis > .diagnosis-card {
     animation: none;
   }
 }

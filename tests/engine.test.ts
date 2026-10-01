@@ -809,8 +809,8 @@ describe('createEngine', () => {
       // Arrivals at 100, 200, ... ms, each served in exactly 20 ms on one slot.
       const engine = run({ traffic: tenPerSecond }, [2500])
       const quiet = {
-        retries: 0,
-        quickRetries: 0,
+        retryAttempts: 0,
+        quickRetryAttempts: 0,
         rejected: 0,
         delayed: 0,
         failed: { rejected: 0, timedOut: 0, shed: 0 },

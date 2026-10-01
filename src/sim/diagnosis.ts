@@ -126,10 +126,17 @@ export const SATURATION_BROKEN_BUSY = 0.95
  */
 export const SATURATION_BROKEN_RATIO = 3
 
-/** The busy share for `warn`: 85%, where waiting for a slot starts to show in the p99. */
+/**
+ * The busy share for `warn`: 85%, where waiting for a slot starts to show in the p99. On the
+ * fixture at 64/s, 0.8x the ceiling, 5 s windows read 79% to 84% busy on average and warn
+ * shows in at most 15% of seconds; at 40/s never (.scratch/diagnosis/saturation-fixes.ts).
+ */
 export const SATURATION_WARN_BUSY = 0.85
 
-/** The p99 ratio for `warn`: the slowest Attempts take twice what the work alone takes. */
+/**
+ * The p99 ratio for `warn`: the slowest Attempts take twice what the work alone takes. At
+ * 40/s on the fixture the p99 stays at or under 1.8x the baseline; at 64/s it reaches 2.3x.
+ */
 export const SATURATION_WARN_RATIO = 2
 
 /**
@@ -178,7 +185,12 @@ export const BOUNDARY_BURST_CLEAR_WINDOWS = 10
  */
 export const RETRY_STORM_AMPLIFICATION = 1.5
 
-/** Retry Amplification at which a retry storm with quick retries becomes `broken`. */
+/**
+ * Retry Amplification at which a retry storm with quick retry Attempts becomes `broken`: each
+ * Request sends twice its share. With "Retry at once" the highest window peaks at 2.1x (token
+ * bucket) to 2.6x (sliding window counter) in Backend overload at 30/s, and at 2.3x to 2.6x in
+ * Edge burst at 4/s (seeds 1 to 8, .scratch/diagnosis/retry-probe.ts).
+ */
 export const RETRY_STORM_BROKEN_AMPLIFICATION = 2
 
 /**
@@ -320,16 +332,23 @@ export function saturationRule(backend: BackendSpec): Rule {
   const baseline = baselineP99Ms(backend)
   let severity: Severity | null = null
 
-  /** Whether `busy` and `ratio` reach a severity entered at `minBusy` and `minRatio`. */
+  const broken = { busy: SATURATION_BROKEN_BUSY, ratio: SATURATION_BROKEN_RATIO }
+  const warn = { busy: SATURATION_WARN_BUSY, ratio: SATURATION_WARN_RATIO }
+
+  /**
+   * Whether `busy` and `ratio` reach `level`, or stay within its margins once `held`. With no
+   * p99 (nothing finished in time to be measured), a held level stays while the Backend is
+   * still that busy: a Backend so stalled that every caller gave up is not healthy.
+   */
   function reaches(
+    level: { readonly busy: number; readonly ratio: number },
     busy: number,
-    ratio: number,
-    minBusy: number,
-    minRatio: number,
-    alreadyIn: boolean,
+    ratio: number | null,
+    held: boolean,
   ): boolean {
-    if (!alreadyIn) return busy >= minBusy && ratio > minRatio
-    return busy >= minBusy - SATURATION_BUSY_MARGIN && ratio > minRatio - SATURATION_RATIO_MARGIN
+    if (!held) return ratio !== null && busy >= level.busy && ratio > level.ratio
+    const busyEnough = busy >= level.busy - SATURATION_BUSY_MARGIN
+    return busyEnough && (ratio === null || ratio > level.ratio - SATURATION_RATIO_MARGIN)
   }
 
   return {
@@ -338,36 +357,28 @@ export function saturationRule(backend: BackendSpec): Rule {
       const busy = window.reduce((t, s) => t + s.backendUtil, 0) / window.length
       // The newest p99 already covers the last 5 s of completed Attempts.
       const p99 = window.at(-1)?.p99 ?? null
-      if (p99 === null) {
-        severity = null
-        return null
-      }
-      const ratio = p99 / baseline
-      if (
-        reaches(busy, ratio, SATURATION_BROKEN_BUSY, SATURATION_BROKEN_RATIO, severity === 'broken')
-      ) {
-        severity = 'broken'
-      } else if (
-        reaches(busy, ratio, SATURATION_WARN_BUSY, SATURATION_WARN_RATIO, severity !== null)
-      ) {
-        severity = 'warn'
-      } else {
-        severity = null
-      }
+      const ratio = p99 === null ? null : p99 / baseline
+      if (reaches(broken, busy, ratio, severity === 'broken')) severity = 'broken'
+      else if (reaches(warn, busy, ratio, severity !== null)) severity = 'warn'
+      else severity = null
       if (severity === null) return null
       const ms = (value: number) => `${Math.round(value)} ms`
+      // No measured p99 is shown as a dash, never as a number (CLAUDE.md "The one rule").
       return {
         severity,
         evidence: [
           { metric: 'Busy', value: percent(busy) },
-          { metric: 'p99 latency', value: ms(p99) },
-          { metric: 'Baseline p99', value: ms(baseline) },
-          { metric: 'p99 / baseline', value: `${ratio.toFixed(1)}×` },
+          { metric: 'Slowest 1 in 100 (p99)', value: p99 === null ? '–' : ms(p99) },
+          { metric: 'Its work alone (baseline p99)', value: ms(baseline) },
+          { metric: 'Against the baseline', value: ratio === null ? '–' : `${ratio.toFixed(1)}×` },
         ],
         why:
-          `The Backend was busy ${percent(busy)} of the time, so Attempts waited for a slot: ` +
-          `the slowest 1 in 100 took ${ms(p99)}, ${ratio.toFixed(1)}× the ${ms(baseline)} its ` +
-          `work alone takes.`,
+          p99 === null || ratio === null
+            ? `The Backend was busy ${percent(busy)} of the time, and no Attempt finished ` +
+              'before its caller gave up waiting for a slot.'
+            : `The Backend was busy ${percent(busy)} of the time, so Attempts waited for a ` +
+              `slot: the slowest 1 in 100 took ${ms(p99)}, ${ratio.toFixed(1)}× the ` +
+              `${ms(baseline)} its work alone takes.`,
         fixes: [
           // Ranked by what each did on the saturation fixture at 100/s, 1.25x its ceiling, seeds
           // 1 to 8 (.scratch/diagnosis/saturation-fixes.ts): 8 slots, never saturated and Goodput
@@ -507,6 +518,8 @@ export function retryStormRule(): Rule {
     readonly offered: number
     readonly quickShare: number
     readonly seconds: number
+    /** The end of the window, in ms: a held Finding shows numbers from up to 10 s before. */
+    readonly at: number
   }
   const hold = createHold<Reading>(RETRY_STORM_CLEAR_WINDOWS)
 
@@ -516,12 +529,14 @@ export function retryStormRule(): Rule {
       const sum = (pick: (s: Snapshot) => number) => window.reduce((t, s) => t + pick(s), 0)
       const demand = sum((s) => s.demand)
       const offered = sum((s) => s.offeredLoad)
-      const retries = sum((s) => s.retries)
+      const retryAttempts = sum((s) => s.retryAttempts)
+      const quickAttempts = sum((s) => s.quickRetryAttempts)
       const reading = {
         demand,
         offered,
-        quickShare: retries === 0 ? 0 : sum((s) => s.quickRetries) / retries,
+        quickShare: retryAttempts === 0 ? 0 : quickAttempts / retryAttempts,
         seconds: window.length,
+        at: window.at(-1)?.t ?? 0,
       }
       // With no Demand there is no amplification to judge.
       const amplification = demand === 0 ? 0 : offered / demand
@@ -544,10 +559,14 @@ export function retryStormRule(): Rule {
           { metric: 'Offered Load', value: perSecond(shown.offered) },
           { metric: 'Demand', value: perSecond(shown.demand) },
           { metric: 'Retry Amplification', value: amp },
-          { metric: `Retries within ${QUICK_RETRY_MS} ms`, value: quick },
+          { metric: `Retry Attempts within ${QUICK_RETRY_MS} ms`, value: quick },
+          {
+            metric: 'When',
+            value: `${((shown.at - shown.seconds * SNAPSHOT_MS) / 1000).toFixed(0)} to ${(shown.at / 1000).toFixed(0)} s`,
+          },
         ],
         why:
-          `Offered Load reached ${amp} Demand because ${quick} of retries came within ` +
+          `Offered Load reached ${amp} Demand because ${quick} of retry Attempts came within ` +
           `${QUICK_RETRY_MS} ms of the failure that caused them, too soon for anything to have ` +
           'changed.',
         fixes: [
@@ -555,9 +574,9 @@ export function retryStormRule(): Rule {
           // "Retry at once" (9.9 to 10.7/s), seeds 1 to 8 (.scratch/diagnosis/retry-fixes.ts):
           // back off with jitter 12.7 to 13.6/s; wait for Retry-After 10.9 to 11.6/s; 2 Attempts
           // instead of 3, 10.5 to 11.0/s, with amplification down from 2.3x to 1.65x.
-          { text: 'Try backing off with jitter, so retries wait a random, growing time' },
+          { text: 'Try backing off with jitter, so each new Attempt waits a random, growing time' },
           {
-            text: 'Try waiting for Retry-After, so retries come when the Limiter says there is room',
+            text: 'Try waiting for Retry-After, so new Attempts come when the Limiter says there is room',
           },
           { text: 'Try fewer Attempts per Request, so each failure adds less traffic' },
         ],

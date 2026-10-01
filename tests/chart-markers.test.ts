@@ -30,8 +30,8 @@ describe('findingMarkers', () => {
         'p',
       ),
     ).toEqual([
-      { t: 10_000, label: 'Retry storm', targetId: 'p', ended: true },
-      { t: 41_000, label: 'Boundary burst', targetId: 'p-boundary-burst', ended: false },
+      { t: 10_000, label: 'Retry storm', targetId: 'p' },
+      { t: 41_000, label: 'Boundary burst', targetId: 'p-boundary-burst' },
     ])
   })
 

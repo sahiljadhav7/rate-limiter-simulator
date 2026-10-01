@@ -19,10 +19,15 @@ const options = {
  */
 function severities(seconds: readonly (readonly [number, number, number])[]) {
   const diagnoser = createDiagnoser(options, [retryStormRule()])
-  return seconds.map(([demand, offeredLoad, quickRetries], i) => {
+  return seconds.map(([demand, offeredLoad, quickRetryAttempts], i) => {
     const retries = offeredLoad - demand
     diagnoser.add(
-      snapshotAt((6 + i) * 1000, { demand, offeredLoad, retries, quickRetries }),
+      snapshotAt((6 + i) * 1000, {
+        demand,
+        offeredLoad,
+        retryAttempts: retries,
+        quickRetryAttempts,
+      }),
       allowed,
     )
     return diagnoser.findings()[0]?.severity ?? 'healthy'
@@ -71,8 +76,8 @@ describe('the retry storm rule', () => {
       const s = snapshotAt((6 + i) * 1000, {
         demand: 10,
         offeredLoad: 24,
-        retries: 14,
-        quickRetries: 10,
+        retryAttempts: 14,
+        quickRetryAttempts: 10,
       })
       diagnoser.add(s, allowed)
     }
@@ -86,16 +91,17 @@ describe('the retry storm rule', () => {
         { metric: 'Offered Load', value: '24.0/s' },
         { metric: 'Demand', value: '10.0/s' },
         { metric: 'Retry Amplification', value: '2.4×' },
-        { metric: 'Retries within 10 ms', value: '71%' },
+        { metric: 'Retry Attempts within 10 ms', value: '71%' },
+        { metric: 'When', value: '5 to 10 s' },
       ],
     })
     expect(finding?.why).toBe(
-      'Offered Load reached 2.4× Demand because 71% of retries came within 10 ms of the ' +
+      'Offered Load reached 2.4× Demand because 71% of retry Attempts came within 10 ms of the ' +
         'failure that caused them, too soon for anything to have changed.',
     )
     expect(finding?.fixes.map((fix) => fix.text)).toEqual([
-      'Try backing off with jitter, so retries wait a random, growing time',
-      'Try waiting for Retry-After, so retries come when the Limiter says there is room',
+      'Try backing off with jitter, so each new Attempt waits a random, growing time',
+      'Try waiting for Retry-After, so new Attempts come when the Limiter says there is room',
       'Try fewer Attempts per Request, so each failure adds less traffic',
     ])
   })

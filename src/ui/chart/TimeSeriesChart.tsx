@@ -91,9 +91,12 @@ function pillWidth(text: string): number {
   return text.length * PILL_CHAR_PX + PILL_PADDING_PX
 }
 
-/** A marker pill's height and the step between rows of them, in px. */
+/**
+ * A marker pill's drawn height, and the step between rows of them, in px: its hit area is 32
+ * px tall (DESIGN.md "Accessibility"), so rows 32 px apart never share a click.
+ */
 const MARKER_PILL_HEIGHT = 18
-const MARKER_PILL_STEP = 21
+const MARKER_PILL_STEP = 32
 /** The least space between two pills on one row, in px. */
 const MARKER_PILL_GAP = 4
 
