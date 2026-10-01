@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createRunner, FRAME_CAP_MS, type Runner } from '../src/runner/runner.ts'
 import { subBucketMsFor, type Scenario } from '../src/runner/scenario.ts'
+import { createDiagnoser } from '../src/sim/diagnosis.ts'
 import { createEngine } from '../src/sim/engine.ts'
 import { createLimiter } from '../src/sim/limiter.ts'
 import { createStreams } from '../src/sim/rng.ts'
@@ -485,5 +486,31 @@ describe('restart', () => {
     ).toThrow(RangeError)
     expect(runner.view().simMs).toBe(2000)
     expect(results(runner)).toEqual(before)
+  })
+})
+
+describe('Findings', () => {
+  it('are what a diagnoser fed the same Snapshots finds, for every Variant', () => {
+    const runner = createRunner(scenario, UNLIMITED)
+    tickTo(runner, 20_000, [16, 33, 100])
+    const { variants } = runner.view()
+    for (const variant of variants) {
+      const direct = createDiagnoser({ queueLimit: scenario.backend.queueLimit })
+      for (const snapshot of variant.snapshots) direct.add(snapshot)
+      expect(variant.findings).toEqual(direct.findings())
+    }
+    // The fixture's Backend serves 100 per second behind Limiters allowing 120: not vacuous.
+    expect(variants.some((variant) => variant.findings.length > 0)).toBe(true)
+  })
+
+  it('replay identically, and start again on reset', () => {
+    const a = createRunner(scenario, UNLIMITED)
+    const b = createRunner(scenario, UNLIMITED)
+    tickTo(a, 15_000, [16])
+    tickTo(b, 15_000, [100])
+    const findings = (r: Runner) => r.view().variants.map((variant) => variant.findings)
+    expect(findings(a)).toEqual(findings(b))
+    a.reset()
+    expect(findings(a).every((list) => list.length === 0)).toBe(true)
   })
 })

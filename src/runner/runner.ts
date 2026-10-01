@@ -7,13 +7,16 @@
 import {
   checkNonNegative,
   checkPositive,
+  createDiagnoser,
   createEngine,
   createLimiter,
   createStreams,
   type AllowedSubBuckets,
   type ControlChange,
   type ControlEvent,
+  type Diagnoser,
   type Engine,
+  type Finding,
   type Snapshot,
   type Totals,
   type TrafficSource,
@@ -60,6 +63,8 @@ export interface VariantView {
   readonly totals: Totals
   /** Allowed Attempts per tenth of a window, for the boundary-burst chart (D5). */
   readonly allowedSubBuckets: AllowedSubBuckets
+  /** What diagnosis finds after the newest Snapshot. */
+  readonly findings: readonly Finding[]
 }
 
 /** What the UI reads after each frame. */
@@ -136,10 +141,19 @@ export interface Runner {
   retainedArrivals(): number
 }
 
+/** One Variant's parts in a run. */
+interface RunVariant {
+  readonly config: VariantConfig
+  readonly engine: Engine
+  readonly diagnoser: Diagnoser
+  /** How many of the engine's Snapshots the diagnoser has read. */
+  diagnosed: number
+}
+
 /** The parts of one run, rebuilt from the Scenario on reset. */
 interface Run {
   readonly source: TrafficSource
-  readonly variants: readonly { readonly config: VariantConfig; readonly engine: Engine }[]
+  readonly variants: readonly RunVariant[]
 }
 
 /** `scenario` with `live` added to its scripted controls, in time order, scripted first at a tie. */
@@ -177,6 +191,8 @@ function startRun(scenario: Scenario): Run {
       streams: createStreams(scenario.seed),
       subBucketMs: subBucketMsFor(config.limiter),
     }),
+    diagnoser: createDiagnoser({ queueLimit: scenario.backend.queueLimit }),
+    diagnosed: 0,
   }))
   return { source, variants }
 }
@@ -206,10 +222,17 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
     return run.variants.reduce((sum, { engine }) => sum + engine.eventsHandled(), 0)
   }
 
-  /** Moves the source, then every engine, to `untilMs`. */
+  /** Moves the source, then every engine, to `untilMs`, and diagnoses any new Snapshot. */
   function advanceTo(untilMs: number): void {
     run.source.advanceTo(untilMs)
-    for (const { engine } of run.variants) engine.advanceTo(untilMs)
+    for (const variant of run.variants) {
+      variant.engine.advanceTo(untilMs)
+      const snapshots = variant.engine.snapshots()
+      while (variant.diagnosed < snapshots.length) {
+        const snapshot = snapshots[variant.diagnosed++]
+        if (snapshot) variant.diagnoser.add(snapshot)
+      }
+    }
     simMs = untilMs
   }
 
@@ -274,11 +297,12 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
         behind,
         eventsHandled: eventsHandled(),
         timeline: run.source.timeline(),
-        variants: run.variants.map(({ config, engine }) => ({
+        variants: run.variants.map(({ config, engine, diagnoser }) => ({
           label: config.label,
           snapshots: engine.snapshots(),
           totals: engine.totals(),
           allowedSubBuckets: engine.allowedSubBuckets(),
+          findings: diagnoser.findings(),
         })),
       }
     },
