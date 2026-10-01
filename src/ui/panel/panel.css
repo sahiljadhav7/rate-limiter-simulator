@@ -321,3 +321,101 @@
     animation: none;
   }
 }
+
+/*
+ * Diagnosis slot and cards (DESIGN.md "Diagnosis card"). The slot is the panel's last row and
+ * is empty, with no box, when nothing is found. Labels use --text-dim here: --text-faint on
+ * --warn-soft is 4.36:1 in the dark theme, under AA. The card is also an .island, which sets
+ * a border and background at the same specificity, so its own rules go through the slot.
+ */
+.diagnosis {
+  display: grid;
+  gap: var(--sp-3);
+  align-content: start;
+}
+
+.diagnosis > .diagnosis-card {
+  border-left: 3px solid var(--danger-mark);
+  background: var(--danger-soft);
+  animation: diagnosis-in var(--dur-slow) var(--ease-out);
+}
+
+.diagnosis > .diagnosis-card[data-severity='warn'] {
+  border-left-color: var(--warn-mark);
+  background: var(--warn-soft);
+}
+
+.diagnosis-card .label {
+  color: var(--text-dim);
+}
+
+.diagnosis-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@keyframes diagnosis-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.diagnosis-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.diagnosis-head h3 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-num);
+  letter-spacing: var(--tr-lg);
+  line-height: var(--lh-num);
+}
+
+.diagnosis-card .diagnosis-severity {
+  color: var(--danger);
+}
+
+.diagnosis-card[data-severity='warn'] .diagnosis-severity {
+  color: var(--warn);
+}
+
+.evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+  margin: var(--sp-3) 0 0;
+}
+
+.evidence dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-num);
+  font-weight: var(--fw-num);
+  line-height: var(--lh-num);
+}
+
+.diagnosis-card h4 {
+  margin: var(--sp-3) 0 var(--sp-1);
+}
+
+.diagnosis-card p,
+.fixes {
+  margin: 0;
+  max-width: 60ch;
+}
+
+.fixes {
+  padding-left: var(--sp-5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diagnosis-card {
+    animation: none;
+  }
+}

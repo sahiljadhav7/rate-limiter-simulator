@@ -4,6 +4,7 @@ import type { VariantConfig } from '../../runner/scenario.ts'
 import type { BackendSpec, Severity } from '../../sim/index.ts'
 import { RETRY_MODES, type RetryMode } from '../controls/retry-options.ts'
 import { CHART_ROWS, VariantCharts } from '../VariantCharts.tsx'
+import { DiagnosisSlot } from './DiagnosisCard.tsx'
 import { ALGORITHM_NAMES, KEY_SCOPE_NAMES } from './limiter-names.ts'
 import { nodeState } from './node-state.ts'
 import { PipelineStrip } from './PipelineStrip.tsx'
@@ -11,11 +12,11 @@ import { DASH, formatNumber, formatShare, panelStats } from './stats.ts'
 import './panel.css'
 
 /**
- * How many grid rows a panel has: the header, the pipeline strip, the stat row and the charts.
- * The panels share these rows through `subgrid`, so the same row sits at the same height in
- * every column.
+ * How many grid rows a panel has: the header, the pipeline strip, the stat row, the charts and
+ * the diagnosis slot. The panels share these rows through `subgrid`, so the same row sits at
+ * the same height in every column.
  */
-export const PANEL_ROWS = 3 + CHART_ROWS
+export const PANEL_ROWS = 4 + CHART_ROWS
 
 /** One stat (DESIGN.md "Stat"): label above, the value in mono, the unit beside it. */
 function Stat(props: {
@@ -55,18 +56,20 @@ export interface VariantPanelProps {
 
 /**
  * One Variant as an island (DESIGN.md "Island"): a header naming it with its algorithm and key
- * scope, the pipeline strip and the stat row over the last 5 seconds, then its charts. The
- * diagnosis card (RS-26) goes after the charts.
+ * scope, the pipeline strip and the stat row over the last 5 seconds, then its charts, then
+ * a diagnosis card for each active Finding.
  */
 export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps) {
   const { variant, config, backend, clients, nowMs, index, onRetryMode } = props
-  const headingId = useId()
+  const panelId = useId()
+  const headingId = `${panelId}-heading`
   const retryId = useId()
   const stats = panelStats(variant.snapshots, config.limiter, clients)
   const backendState = nodeState(variant.findings, 'backend')
   return (
     <section
       className="island panel"
+      id={panelId}
       aria-labelledby={headingId}
       style={{ '--panel-rows': PANEL_ROWS } as CSSProperties}
       data-testid="variant"
@@ -123,6 +126,7 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
         clients={clients}
         nowMs={nowMs}
       />
+      <DiagnosisSlot findings={variant.findings} panelId={panelId} />
     </section>
   )
 })

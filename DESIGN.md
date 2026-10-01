@@ -157,10 +157,12 @@ The two blocks above are the source of truth for each theme's values. In `src/ui
 **Ledger.** A single-line status strip at the bottom-left: mono, `--fs-label`, uppercase, `--text-faint`, on `--surface` with a `--border` outline and radius `--r-btn`. Content: `3 VARIANTS · SEED 42 · T 64.2s · 1× · 18,204 EVENTS`. When the event budget is hit it adds `RUNNING SLOWER THAN REQUESTED` in `--warn`.
 
 **Diagnosis card.** An island that slides up 6px and fades in (`--dur-slow`, `--ease-out`) inside the affected Variant's panel. A 3px left border in `--danger-mark` (`broken`) or `--warn-mark` (`warn`), background `--danger-soft` or `--warn-soft`. Contents, in order:
-1. A pill (ROOT CAUSE or CONTRIBUTING) and the Failure Mode label in `--fs-lg`.
+1. A pill (ROOT CAUSE or CONTRIBUTING), the Failure Mode label in `--fs-lg`, and the severity in words in label type (BROKEN in `--danger`, WARNING in `--warn`), so it is not shown by colour alone.
 2. An evidence table of mono values with labels.
 3. **Why**, in body text.
 4. **How to fix**, as a ranked list. Each Fix with a patch gets an **Apply fix** primary button.
+
+Labels inside the card use `--text-dim`: `--text-faint` on `--warn-soft` is 4.36:1 in the dark theme, under AA. The cards sit in the panel's last row, Root Cause first; with no Finding the row is empty, with no box or placeholder. A visually hidden polite live region names the Root Cause and what contributes, without the numbers, so a screen reader hears a change in the diagnosis once.
 
 ## Layout
 
