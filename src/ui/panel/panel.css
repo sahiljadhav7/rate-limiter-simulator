@@ -1,35 +1,4 @@
-/* Variant panels (DESIGN.md "Island", "Pill", "Stat", "Layout"). Every colour is a token. */
-.island {
-  background: var(--surface);
-  border: var(--bw) solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-md);
-  padding: var(--sp-3);
-}
-
-.label {
-  font-size: var(--fs-label);
-  font-weight: var(--fw-med);
-  letter-spacing: var(--tr-label);
-  line-height: var(--lh-label);
-  text-transform: uppercase;
-  color: var(--text-faint);
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 var(--sp-2);
-  border-radius: var(--r-pill);
-  background: var(--surface-2);
-  font-size: var(--fs-label);
-  font-weight: var(--fw-med);
-  letter-spacing: var(--tr-label);
-  text-transform: uppercase;
-  color: var(--text-dim);
-}
-
+/* Variant panels (DESIGN.md "Stat", "Pipeline node", "Edge", "Layout"). Every colour is a token. */
 /*
  * One column per Variant at 1024px and wider. Each panel spans --panel-rows rows of the page
  * grid and shares them through subgrid, so the same row lines up in every column. Below that

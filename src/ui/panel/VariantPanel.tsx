@@ -1,11 +1,11 @@
-import { memo, useId, type CSSProperties } from 'react'
+import { memo, useId, type CSSProperties, type ReactNode } from 'react'
 import type { VariantView } from '../../runner/runner.ts'
 import type { VariantConfig } from '../../runner/scenario.ts'
 import type { BackendSpec } from '../../sim/index.ts'
 import { CHART_ROWS, VariantCharts } from '../VariantCharts.tsx'
 import { ALGORITHM_NAMES, KEY_SCOPE_NAMES } from './limiter-names.ts'
 import { PipelineStrip } from './PipelineStrip.tsx'
-import { DASH, formatRate, formatShare, panelStats } from './stats.ts'
+import { DASH, formatNumber, formatShare, panelStats } from './stats.ts'
 import './panel.css'
 
 /**
@@ -17,7 +17,7 @@ export const PANEL_ROWS = 3 + CHART_ROWS
 
 /** One stat (DESIGN.md "Stat"): label above, the value in mono, the unit beside it. */
 function Stat(props: {
-  readonly label: string
+  readonly label: ReactNode
   readonly value: string
   readonly unit: string
   readonly hero?: boolean
@@ -68,10 +68,19 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
       </header>
       <PipelineStrip stats={stats} />
       <dl className="stats" aria-label="Last 5 seconds">
-        <Stat label="Offered Load" value={formatRate(stats.offeredLoad)} unit="/s" />
-        <Stat label="Goodput" value={formatRate(stats.goodput)} unit="/s" />
+        <Stat label="Offered Load" value={formatNumber(stats.offeredLoad)} unit="/s" />
+        <Stat label="Goodput" value={formatNumber(stats.goodput)} unit="/s" />
         <Stat label="Rejected" value={formatShare(stats.rejectedShare)} unit="%" />
-        <Stat label="Attempt p99" value={formatRate(stats.p99)} unit="ms" hero />
+        <Stat
+          label={
+            <>
+              Attempt <abbr title="99th percentile">p99</abbr>
+            </>
+          }
+          value={formatNumber(stats.p99)}
+          unit="ms"
+          hero
+        />
       </dl>
       <VariantCharts
         variant={variant}

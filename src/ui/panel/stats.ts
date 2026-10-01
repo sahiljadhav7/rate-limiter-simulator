@@ -1,8 +1,9 @@
 /**
  * The numbers a Variant's panel shows in its stat row and pipeline strip, worked out from its
  * Snapshots without React so they are tested on their own (.scratch/panels/spec.md decisions 4
- * to 6). Every one covers the same last 5 seconds, and is null when there is nothing to measure,
- * which the panel shows as a dash (CLAUDE.md "The one rule").
+ * to 6). Every one covers the same last 5 seconds, apart from Requests waiting, which is a count
+ * at one moment and so is the newest. Each is null when there is nothing to measure, which the
+ * panel shows as a dash (CLAUDE.md "The one rule").
  */
 import { allowedPerSecond, type LimiterSpec, type Snapshot } from '../../sim/index.ts'
 
@@ -25,9 +26,9 @@ export interface PanelStats {
   readonly rejectedShare: number | null
   /** Attempt p99 from the newest Snapshot, which already covers the last 5 s. */
   readonly p99: number | null
-  /** Fraction of Backend slot time that was busy in the newest second. */
+  /** Fraction of Backend slot time that was busy, averaged over the same Snapshots. */
   readonly busy: number | null
-  /** Requests waiting for a Backend slot at the end of the newest second. */
+  /** Requests waiting for a Backend slot now: at the end of the newest second. */
   readonly waiting: number | null
   /** Allowed per second against what the Limiter allows in the long run, clamped to 0 to 1. */
   readonly limiterMeter: number | null
@@ -75,6 +76,7 @@ export function panelStats(
   const sum = (pick: (s: Snapshot) => number) => recent.reduce((total, s) => total + pick(s), 0)
   const offered = sum((s) => s.offeredLoad)
   const allowed = sum((s) => s.allowed) / recent.length
+  const busy = sum((s) => s.backendUtil) / recent.length
   return {
     demand: sum((s) => s.demand) / recent.length,
     offeredLoad: offered / recent.length,
@@ -82,18 +84,18 @@ export function panelStats(
     allowed,
     rejectedShare: offered === 0 ? null : sum((s) => s.rejected) / offered,
     p99: newest.p99,
-    busy: newest.backendUtil,
+    busy,
     waiting: newest.queueDepth,
     limiterMeter: clamp01(allowed / limiterCapacity(limiter, clients)),
-    backendMeter: clamp01(newest.backendUtil),
+    backendMeter: clamp01(busy),
   }
 }
 
 /**
- * A rate or a time as text: one decimal place under 100 (12.5, 0.4), whole numbers with
+ * A rate, a time or a count as text: one decimal place under 100 (12.5, 0.4), whole numbers with
  * thousands separators from 100 (151, 1,204), and a dash for null.
  */
-export function formatRate(value: number | null): string {
+export function formatNumber(value: number | null): string {
   if (value === null) return DASH
   const tenths = Math.round(value * 10) / 10
   return tenths < 100 ? String(tenths) : Math.round(value).toLocaleString('en-US')

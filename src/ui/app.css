@@ -1,4 +1,37 @@
 /* The page (DESIGN.md "Layout"): the top bar, then the Variant panels, on the graph paper. */
+
+/* Components used across the page (DESIGN.md "Island", "Pill", "Base styles" Label). */
+.island {
+  background: var(--surface);
+  border: var(--bw) solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--sp-3);
+}
+
+.label {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-med);
+  letter-spacing: var(--tr-label);
+  line-height: var(--lh-label);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-med);
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
 .page {
   display: grid;
   gap: var(--sp-3);
@@ -68,4 +101,9 @@
 
 .ledger-notice:empty {
   display: none;
+}
+
+/* An abbreviation is spelled out in its title; a dotted underline would crowd the labels. */
+abbr[title] {
+  text-decoration: none;
 }

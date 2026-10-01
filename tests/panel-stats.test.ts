@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DASH,
-  formatRate,
+  formatNumber,
   formatShare,
   limiterCapacity,
   panelStats,
@@ -45,12 +45,40 @@ const fixedWindow: LimiterSpec = {
 describe('panelStats', () => {
   // Seven seconds; only the last five count. The first two would pull every average off.
   const snapshots = [
-    snapshot(1000, { offeredLoad: 900, goodput: 900, demand: 900, allowed: 900, rejected: 900 }),
-    snapshot(2000, { offeredLoad: 900, goodput: 900, demand: 900, allowed: 900, rejected: 900 }),
-    snapshot(3000, { demand: 10, offeredLoad: 12, allowed: 10, rejected: 2, goodput: 9 }),
-    snapshot(4000, { demand: 10, offeredLoad: 14, allowed: 10, rejected: 4, goodput: 10 }),
-    snapshot(5000, { demand: 12, offeredLoad: 16, allowed: 10, rejected: 6, goodput: 10 }),
-    snapshot(6000, { demand: 8, offeredLoad: 8, allowed: 8, rejected: 0, goodput: 8 }),
+    snapshot(1000, { offeredLoad: 900, goodput: 900, demand: 900, allowed: 900, backendUtil: 1 }),
+    snapshot(2000, { offeredLoad: 900, goodput: 900, demand: 900, allowed: 900, backendUtil: 1 }),
+    snapshot(3000, {
+      demand: 10,
+      offeredLoad: 12,
+      allowed: 10,
+      rejected: 2,
+      goodput: 9,
+      backendUtil: 0.5,
+    }),
+    snapshot(4000, {
+      demand: 10,
+      offeredLoad: 14,
+      allowed: 10,
+      rejected: 4,
+      goodput: 10,
+      backendUtil: 0.5,
+    }),
+    snapshot(5000, {
+      demand: 12,
+      offeredLoad: 16,
+      allowed: 10,
+      rejected: 6,
+      goodput: 10,
+      backendUtil: 0.5,
+    }),
+    snapshot(6000, {
+      demand: 8,
+      offeredLoad: 8,
+      allowed: 8,
+      rejected: 0,
+      goodput: 8,
+      backendUtil: 0.25,
+    }),
     snapshot(7000, {
       demand: 10,
       offeredLoad: 10,
@@ -63,7 +91,7 @@ describe('panelStats', () => {
     }),
   ]
 
-  it('averages the rates over the last 5 Snapshots, and reads the rest from the newest', () => {
+  it('averages over the last 5 Snapshots, and reads p99 and waiting from the newest', () => {
     expect(panelStats(snapshots, fixedWindow, 3)).toEqual({
       demand: 10, // (10 + 10 + 12 + 8 + 10) / 5
       offeredLoad: 12, // (12 + 14 + 16 + 8 + 10) / 5
@@ -71,10 +99,10 @@ describe('panelStats', () => {
       allowed: 9, // (10 + 10 + 10 + 8 + 7) / 5
       rejectedShare: 0.25, // 15 rejected of 60 offered
       p99: 151,
-      busy: 0.25,
+      busy: 0.4, // (0.5 + 0.5 + 0.5 + 0.25 + 0.25) / 5
       waiting: 3,
       limiterMeter: 0.9, // 9 allowed per second against a limit of 10 per second
-      backendMeter: 0.25,
+      backendMeter: 0.4,
     })
   })
 
@@ -122,7 +150,7 @@ describe('formatting', () => {
     [1204, '1,204'],
     [null, DASH],
   ])('a rate or a time of %s reads %s', (value, text) => {
-    expect(formatRate(value)).toBe(text)
+    expect(formatNumber(value)).toBe(text)
   })
 
   it.each([

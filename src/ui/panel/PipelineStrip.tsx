@@ -1,4 +1,5 @@
-import { DASH, formatRate, formatShare, type PanelStats } from './stats.ts'
+import type { ReactNode } from 'react'
+import { DASH, formatNumber, formatShare, type PanelStats } from './stats.ts'
 
 /** A pipeline node's kind, which picks its colours through the `[data-kind]` rules. */
 type Kind = 'client' | 'limiter' | 'backend'
@@ -7,7 +8,7 @@ type Kind = 'client' | 'limiter' | 'backend'
 interface Metric {
   readonly value: string
   readonly unit: string
-  readonly label: string
+  readonly label: ReactNode
 }
 
 /**
@@ -31,8 +32,9 @@ function Node(props: {
     <li className="node" data-kind={kind}>
       <span className="node-name">{name}</span>
       <ul className="node-metrics">
-        {metrics.map((m) => (
-          <li key={m.label}>
+        {metrics.map((m, i) => (
+          // The metrics of a node never change order, so the index is a stable key.
+          <li key={i}>
             <span className="node-value">
               {m.value}
               {m.value === DASH ? null : <span className="node-unit">{m.unit}</span>}
@@ -59,7 +61,7 @@ function Node(props: {
 
 /** The arrow between two nodes, with the rate flowing along it. Static until RS-22. */
 function Edge(props: { readonly rate: number | null; readonly label: string }) {
-  const text = formatRate(props.rate)
+  const text = formatNumber(props.rate)
   return (
     <li className="edge" aria-label={`${props.label}: ${text} per second`}>
       <span className="edge-rate" aria-hidden="true">
@@ -73,18 +75,21 @@ function Edge(props: { readonly rate: number | null; readonly label: string }) {
 
 /**
  * A Variant's pipeline (DESIGN.md "Pipeline node", "Edge"): Clients → Limiter → Backend with
- * their numbers over the last 5 seconds, the same ones the stat row shows. Real text in a list,
+ * the same numbers as the stat row: rates and Busy over the last 5 seconds, Waiting now. Real text in a list,
  * so a screen reader reads it in order.
  */
 export function PipelineStrip({ stats }: { readonly stats: PanelStats }) {
   return (
-    <ol className="pipeline" aria-label="Pipeline, last 5 seconds">
+    <ol
+      className="pipeline"
+      aria-label="Pipeline: rates and Busy over the last 5 seconds, Waiting now"
+    >
       <Node
         kind="client"
         name="Clients"
         metrics={[
-          { value: formatRate(stats.demand), unit: '/s', label: 'Demand' },
-          { value: formatRate(stats.offeredLoad), unit: '/s', label: 'Offered' },
+          { value: formatNumber(stats.demand), unit: '/s', label: 'Demand' },
+          { value: formatNumber(stats.offeredLoad), unit: '/s', label: 'Offered' },
         ]}
       />
       <Edge rate={stats.offeredLoad} label="Offered Load to the Limiter" />
@@ -92,7 +97,7 @@ export function PipelineStrip({ stats }: { readonly stats: PanelStats }) {
         kind="limiter"
         name="Limiter"
         metrics={[
-          { value: formatRate(stats.allowed), unit: '/s', label: 'Allowed' },
+          { value: formatNumber(stats.allowed), unit: '/s', label: 'Allowed' },
           { value: formatShare(stats.rejectedShare), unit: '%', label: 'Rejected' },
         ]}
         meter={{ value: stats.limiterMeter, label: 'Allowed against the limit, percent' }}
@@ -103,8 +108,12 @@ export function PipelineStrip({ stats }: { readonly stats: PanelStats }) {
         name="Backend"
         metrics={[
           { value: formatShare(stats.busy), unit: '%', label: 'Busy' },
-          { value: formatRate(stats.p99), unit: 'ms', label: 'p99' },
-          { value: formatRate(stats.waiting), unit: '', label: 'Waiting' },
+          {
+            value: formatNumber(stats.p99),
+            unit: 'ms',
+            label: <abbr title="99th percentile">p99</abbr>,
+          },
+          { value: formatNumber(stats.waiting), unit: '', label: 'Waiting' },
         ]}
         meter={{ value: stats.backendMeter, label: 'Backend slots busy, percent' }}
       />
