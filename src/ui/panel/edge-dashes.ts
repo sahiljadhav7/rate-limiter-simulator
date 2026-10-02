@@ -2,7 +2,7 @@
  * How fast an edge's dashes move (DESIGN.md "Edge"; .scratch/polish/spec.md decisions 18 and
  * 19). Speed follows the logarithm of the rate the edge's label shows, so 1 a second still crawls
  * and 1,000 a second does not blur, and it follows simulated time: still while paused, faster at
- * 10x. Pure; `useEdgeDashes` moves the dashes.
+ * 10x. Pure; `useDashAnimation` moves the dashes.
  *
  * The numbers were chosen by arithmetic, not by watching (a headless browser cannot judge
  * motion; the review ticket asks a person to): a dash and its gap are DASH_PERIOD_PX together.

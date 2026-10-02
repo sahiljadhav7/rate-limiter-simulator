@@ -207,7 +207,7 @@
 /*
  * A dashed arrow whose dashes move toward the next node (DESIGN.md "Edge"). The dashes are a
  * strip one dash period (8px) longer than the line, clipped by .edge-dashes and slid along it by
- * a Web Animation of its transform (useDashAnimation), which the browser runs off the main thread.
+ * its transform, which useDashAnimation's shared animation-frame loop writes each frame.
  */
 .edge {
   --edge-color: var(--line-2);

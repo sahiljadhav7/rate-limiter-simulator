@@ -487,6 +487,7 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
 - **RS-21 Deploy + README [Core]** (1h): Vercel deploy (static, Hobby plan), `vercel.json` rewrite, README with a GIF, architecture section, fidelity section, URL state (preset + params + seed).
 - **RS-29 CI gate [Core]** (0.25h): run the test suite in CI (GitHub Action or Vercel build command) so a failing test blocks deploy.
 - **RS-22 Polish [Day 3]** (1h): empty states, responsive layout, default scenario on load.
+  - *Note (2026-10-02):* built from `.scratch/polish/spec.md` (decisions from a grilling session). Default scenario on load already shipped with RS-21. Phone (below 640px): one Variant at a time behind a bottom tab bar with a Compare tab, a top bar with the open tab's p99 beside Demand and Burst and Seed behind More; no sideways scroll from 320px; a narrow panel stacks its pipeline; 44px targets under `pointer: coarse`; the ledger in the page flow. Empty states: charts say "Waiting for the first simulated second" (no made-up 0 to 1 scale) and the latency chart says when no Attempt succeeded; the diagnosis row says when diagnosis starts; a notice after the tab was hidden. Edge dashes move with the log of the rate, in simulated time, about 2 points of main-thread time at 10x in headless Chrome.
 
 ## Epic 6: Failure diagnosis
 - **RS-23 Failure taxonomy + thresholds [Day 3]** (1h): `FailureMode` enum, `Finding`/`Fix` types, Cause/Symptom assignment, threshold constants each with a doc comment.

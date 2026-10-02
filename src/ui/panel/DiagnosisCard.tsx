@@ -58,8 +58,9 @@ export interface DiagnosisSlotProps {
 
 /**
  * The panel's last row: a card per active Finding, Root Cause first, and nothing at all when
- * there are none, except during the warm-up, when a line says when diagnosis starts. A polite live region names the diagnosis without its numbers, so a screen
- * reader hears a new Root Cause once. It re-renders only when what it shows changes.
+ * there are none, except during the warm-up, when a line says when diagnosis starts. A polite
+ * live region names the diagnosis without its numbers, so a screen reader hears a new Root Cause
+ * once. It re-renders only when what it shows changes.
  */
 export const DiagnosisSlot = memo(
   function DiagnosisSlot({ findings, panelId, warmUpLine }: DiagnosisSlotProps) {

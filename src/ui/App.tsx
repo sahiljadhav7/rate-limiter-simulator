@@ -64,26 +64,20 @@ function ScenarioRun(props: {
     () => ({ speed: view.speed, paused: view.paused }),
     [view.speed, view.paused],
   )
-  // Each Variant's p99 as the stat row computes it, on a phone only (wider screens show no
-  // headline); the headline array stays the same object while the values hold, so the memoised
-  // controls re-render once a second, not every frame.
-  const p99Key = (phone ? view.variants : [])
-    .map((v, i) => {
-      const config = scenario.variants[i]
-      return config
-        ? panelStats(v.snapshots, config.limiter, scenario.traffic.clients.length).p99
-        : null
-    })
-    .join(',')
-  const headline = useMemo(
-    () =>
-      headlineStats(
+  // Each Variant's p99 as the stat row computes it, on a phone only: wider screens show no
+  // headline. The controls compare it by value, so they re-render when a number changes.
+  const headline = phone
+    ? headlineStats(
         openTab,
         names,
-        p99Key.split(',').map((s) => (s === '' ? null : Number(s))),
-      ),
-    [openTab, names, p99Key],
-  )
+        view.variants.map((v, i) => {
+          const config = scenario.variants[i]
+          return config
+            ? panelStats(v.snapshots, config.limiter, scenario.traffic.clients.length).p99
+            : null
+        }),
+      )
+    : []
   /**
    * The Demand the address bar holds: where the slider was last released, or where Reset put
    * it. Not the live value, which changes every frame of a drag.

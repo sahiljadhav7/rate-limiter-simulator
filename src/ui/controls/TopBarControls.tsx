@@ -133,6 +133,13 @@ function SeedField(props: { readonly seed: number; readonly onChange: (seed: num
   )
 }
 
+/** True if two headlines show the same names and numbers. */
+function sameHeadline(a: readonly HeadlineStat[], b: readonly HeadlineStat[]): boolean {
+  return (
+    a.length === b.length && a.every((s, i) => s.name === b[i]?.name && s.value === b[i]?.value)
+  )
+}
+
 /** What the top bar's controls show and call. */
 export interface TopBarControlsProps {
   readonly controls: RunnerControls
@@ -150,7 +157,7 @@ export interface TopBarControlsProps {
    * fold into a More disclosure. Wider screens show them inline, as before.
    */
   readonly phone: boolean
-  /** The phone's headline stat; keep the same array while its values hold, as this is memoised. */
+  /** The phone's headline stat, compared by value, so a new array with the same numbers is free. */
   readonly headline: readonly HeadlineStat[]
   /** Whether to say the run stood still while the tab was hidden. */
   readonly hiddenNotice: boolean
@@ -161,98 +168,112 @@ export interface TopBarControlsProps {
  * the burst button and the seed. Demand and the burst go into the control timeline; the rest
  * change when simulated time moves, or restart the run.
  */
-export const TopBarControls = memo(function TopBarControls(props: TopBarControlsProps) {
-  const {
-    controls,
-    demandRps,
-    paused,
-    speed,
-    seed,
-    onSeed,
-    onDemandRelease,
-    phone,
-    headline,
-    hiddenNotice,
-  } = props
-  const burstAndSeed = (
-    <>
-      <button
-        type="button"
-        className="btn"
-        title="5 times the Demand for 2 simulated seconds"
-        onClick={controls.burst}
-      >
-        Burst 5× for 2 s
-      </button>
-      <SeedField seed={seed} onChange={onSeed} />
-    </>
-  )
-  return (
-    <div className="island top-bar-controls" role="group" aria-label="Controls">
-      <DemandSlider
-        demandRps={demandRps}
-        onChange={controls.setDemand}
-        onRelease={onDemandRelease}
-        headline={phone ? headline : undefined}
-      />
-      <div className="button-group" role="group" aria-label="Playback">
+export const TopBarControls = memo(
+  function TopBarControls(props: TopBarControlsProps) {
+    const {
+      controls,
+      demandRps,
+      paused,
+      speed,
+      seed,
+      onSeed,
+      onDemandRelease,
+      phone,
+      headline,
+      hiddenNotice,
+    } = props
+    const burstAndSeed = (
+      <>
         <button
           type="button"
-          className="btn btn-icon"
-          aria-label={paused ? 'Play' : 'Pause'}
-          onClick={paused ? controls.play : controls.pause}
+          className="btn"
+          title="5 times the Demand for 2 simulated seconds"
+          onClick={controls.burst}
         >
-          {paused ? <PlayIcon /> : <PauseIcon />}
+          Burst 5× for 2 s
         </button>
-        <button
-          type="button"
-          className="btn btn-icon"
-          aria-label="Step one simulated second"
-          title="Step one simulated second (while paused)"
-          disabled={!paused}
-          onClick={controls.step}
-        >
-          <StepIcon />
-        </button>
-        <button
-          type="button"
-          className="btn btn-icon"
-          aria-label="Reset to 0"
-          title="Reset to 0"
-          onClick={controls.reset}
-        >
-          <ResetIcon />
-        </button>
-      </div>
-      <div className="button-group" role="group" aria-label="Speed">
-        {SPEEDS.map((s) => (
+        <SeedField seed={seed} onChange={onSeed} />
+      </>
+    )
+    return (
+      <div className="island top-bar-controls" role="group" aria-label="Controls">
+        <DemandSlider
+          demandRps={demandRps}
+          onChange={controls.setDemand}
+          onRelease={onDemandRelease}
+          headline={phone ? headline : undefined}
+        />
+        <div className="button-group" role="group" aria-label="Playback">
           <button
-            key={s}
             type="button"
-            className="btn btn-segment"
-            aria-pressed={s === speed}
-            onClick={() => controls.setSpeed(s)}
+            className="btn btn-icon"
+            aria-label={paused ? 'Play' : 'Pause'}
+            onClick={paused ? controls.play : controls.pause}
           >
-            {s}×
+            {paused ? <PlayIcon /> : <PauseIcon />}
           </button>
-        ))}
+          <button
+            type="button"
+            className="btn btn-icon"
+            aria-label="Step one simulated second"
+            title="Step one simulated second (while paused)"
+            disabled={!paused}
+            onClick={controls.step}
+          >
+            <StepIcon />
+          </button>
+          <button
+            type="button"
+            className="btn btn-icon"
+            aria-label="Reset to 0"
+            title="Reset to 0"
+            onClick={controls.reset}
+          >
+            <ResetIcon />
+          </button>
+        </div>
+        <div className="button-group" role="group" aria-label="Speed">
+          {SPEEDS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className="btn btn-segment"
+              aria-pressed={s === speed}
+              onClick={() => controls.setSpeed(s)}
+            >
+              {s}×
+            </button>
+          ))}
+        </div>
+        {phone ? (
+          // Native, so it opens with a tap, Enter or Space and needs no script of its own.
+          <details className="more">
+            <summary className="btn">More</summary>
+            <div className="more-body">{burstAndSeed}</div>
+          </details>
+        ) : (
+          burstAndSeed
+        )}
+        {/*
+         * Last, on a line of its own, so showing it moves no control sideways under the pointer.
+         */}
+        {hiddenNotice ? (
+          <span className="label hidden-notice" aria-hidden="true">
+            {HIDDEN_NOTICE}
+          </span>
+        ) : null}
+        {/* Always rendered and never display: none, so a screen reader announces the change once. */}
+        <span className="visually-hidden" role="status">
+          {hiddenNotice ? HIDDEN_NOTICE : null}
+        </span>
       </div>
-      {phone ? (
-        // Native, so it opens with a tap, Enter or Space and needs no script of its own.
-        <details className="more">
-          <summary className="btn">More</summary>
-          <div className="more-body">{burstAndSeed}</div>
-        </details>
-      ) : (
-        burstAndSeed
-      )}
-      {/*
-       * Last, on a line of its own, so showing it moves no control sideways under the pointer.
-       * Always present, so a screen reader announces the notice once when it appears.
-       */}
-      <span className="label hidden-notice" role="status">
-        {hiddenNotice ? HIDDEN_NOTICE : null}
-      </span>
-    </div>
-  )
-})
+    )
+  },
+  // The rest are stable or plain values; the headline is a new array each render of the page.
+  (before, after) =>
+    (Object.keys(after) as (keyof TopBarControlsProps)[]).every((key) =>
+      key === 'headline'
+        ? sameHeadline(before.headline, after.headline)
+        : before[key] === after[key],
+    ),
+)
