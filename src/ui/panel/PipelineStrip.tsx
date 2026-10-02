@@ -105,10 +105,12 @@ function Edge(props: {
  */
 export function PipelineStrip(props: {
   readonly stats: PanelStats
-  /** The Backend node's state, from the Variant's Findings. */
+  /** Each node's state, from the Variant's Findings about it. */
+  readonly client: NodeState
+  readonly limiter: NodeState
   readonly backend: NodeState
 }) {
-  const { stats, backend } = props
+  const { stats, client, limiter, backend } = props
   // The wrapper is the container the strip's narrow layout queries (panel.css). The panel itself
   // cannot be: a container has layout containment, and that stops it being a subgrid.
   return (
@@ -124,8 +126,13 @@ export function PipelineStrip(props: {
             { value: formatNumber(stats.demand), unit: '/s', label: 'Demand' },
             { value: formatNumber(stats.offeredLoad), unit: '/s', label: 'Offered' },
           ]}
+          state={client}
         />
-        <Edge rate={stats.offeredLoad} label="Offered Load to the Limiter" />
+        <Edge
+          rate={stats.offeredLoad}
+          label="Offered Load to the Limiter"
+          severity={limiter.severity}
+        />
         <Node
           kind="limiter"
           name="Limiter"
@@ -134,6 +141,7 @@ export function PipelineStrip(props: {
             { value: formatShare(stats.rejectedShare), unit: '%', label: 'Rejected' },
           ]}
           meter={{ value: stats.limiterMeter, label: 'Allowed against the limit, percent' }}
+          state={limiter}
         />
         <Edge rate={stats.allowed} label="Allowed to the Backend" severity={backend.severity} />
         <Node

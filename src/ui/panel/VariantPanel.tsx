@@ -142,7 +142,12 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
           </select>
         </span>
       </header>
-      <PipelineStrip stats={stats} backend={backendState} />
+      <PipelineStrip
+        stats={stats}
+        client={nodeState(variant.findings, 'client')}
+        limiter={nodeState(variant.findings, 'limiter')}
+        backend={backendState}
+      />
       <StatRow stats={stats} backendSeverity={backendState.severity} />
       <VariantCharts
         variant={variant}
