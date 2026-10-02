@@ -951,12 +951,16 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
     judge(window) {
       const recent = newest(window)
       if (recent === null) return null
-      // Each Client's Attempts over the span, sent and allowed.
-      const totals = new Map<ClientId, { offered: number; allowed: number }>()
+      // Each Client's new Requests and Attempts over the span, and its Attempts allowed.
+      const totals = new Map<ClientId, { demand: number; offered: number; allowed: number }>()
       for (const snapshot of recent) {
         for (const [id, c] of Object.entries(snapshot.perClient)) {
-          const t = totals.get(id) ?? { offered: 0, allowed: 0 }
-          totals.set(id, { offered: t.offered + c.offeredLoad, allowed: t.allowed + c.allowed })
+          const t = totals.get(id) ?? { demand: 0, offered: 0, allowed: 0 }
+          totals.set(id, {
+            demand: t.demand + c.demand,
+            offered: t.offered + c.offeredLoad,
+            allowed: t.allowed + c.allowed,
+          })
         }
       }
       const ranked = [...totals].sort(([, a], [, b]) => b.allowed - a.allowed)
@@ -974,7 +978,14 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
       // more Attempts without asking for more (a retry storm says that).
       const steady = recent.every((s) => (s.perClient[top]?.demand ?? 0) > fairShare)
       const othersOffered = ranked.reduce((t, [, c]) => t + c.offered, 0) - topTotals.offered
-      const othersPerSecond = othersOffered / recent.length
+      // What the others ask for, not their retries: crowded out, their rejected Requests come
+      // back as Attempts, and counting those would lift them over their share and clear the
+      // Finding just as they lose the most: on the fixture with retries on they lose 60% to 76% of
+      // their Attempts, and judged on Attempts the Finding showed for as little as 0 s of 106
+      // ("Wait for Retry-After"); on Demand it is broken for all 106 (seeds 1 to 8,
+      // .scratch/new-scenarios/noisy-retry.ts).
+      const othersDemand = ranked.reduce((t, [, c]) => t + c.demand, 0) - topTotals.demand
+      const othersPerSecond = othersDemand / recent.length
       const othersFair = fairShare * (clients - 1)
       const othersRejected =
         othersOffered === 0 ? 0 : 1 - (allowedAll - topTotals.allowed) / othersOffered
@@ -988,7 +999,7 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
           { metric: 'Client', value: top },
           { metric: 'Its share of allowed', value: percent(topShare) },
           {
-            metric: 'Others sent',
+            metric: 'Others asked for',
             value: `${perSecondText(othersPerSecond)} of a fair ${perSecondText(othersFair)}`,
           },
           { metric: 'Others rejected', value: percent(othersRejected) },
@@ -997,7 +1008,7 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
           `Client ${top} sent more than its fair share of the limit (${perSecondText(fairShare)}, ` +
           `${limitText} shared by ${clients} Clients) in each of the last ` +
           `${NOISY_NEIGHBOR_SECONDS} seconds and got ${percent(topShare)} of what the Limiter ` +
-          `allowed, so the other Clients, sending ${perSecondText(othersPerSecond)} between them, ` +
+          `allowed, so the other Clients, asking for ${perSecondText(othersPerSecond)} between them, ` +
           `had ${percent(othersRejected)} of their Attempts rejected.`,
         fixes,
       }

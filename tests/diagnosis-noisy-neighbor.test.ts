@@ -76,12 +76,12 @@ describe('the noisy neighbor rule', () => {
     expect(finding?.evidence.map((e) => e.metric)).toEqual([
       'Client',
       'Its share of allowed',
-      'Others sent',
+      'Others asked for',
       'Others rejected',
     ])
     expect(finding?.evidence[0]?.value).toBe('a')
     expect(finding?.why).toMatch(
-      /^Client a sent more than its fair share of the limit \(13\.3\/s, 40\/s shared by 3 Clients\) in each of the last 10 seconds and got \d+\.\d% of what the Limiter allowed, so the other Clients, sending \d+\.\d\/s between them, had \d+\.\d% of their Attempts rejected\.$/,
+      /^Client a sent more than its fair share of the limit \(13\.3\/s, 40\/s shared by 3 Clients\) in each of the last 10 seconds and got \d+\.\d% of what the Limiter allowed, so the other Clients, asking for \d+\.\d\/s between them, had \d+\.\d% of their Attempts rejected\.$/,
     )
   })
 
@@ -136,6 +136,43 @@ describe('the noisy neighbor rule', () => {
         )
       }
       expect(diagnoser.findings()[0]?.severity ?? null).toBe(expected)
+    },
+  )
+
+  // The others' retries are not their greed either: crowded out, their rejected Requests come
+  // back as Attempts, which must not lift them over the fair share and clear the Finding.
+  it('judges what the others ask for, not their retries', () => {
+    const limiter = {
+      algo: 'token-bucket',
+      keyBy: 'global',
+      capacity: 10,
+      refillPerSec: 40,
+    } as const
+    const diagnoser = createDiagnoser(
+      { backend: { slots: 4, queueLimit: 20, meanMs: 50, cv: 0.5 }, limiter },
+      [noisyNeighborRule(limiter)],
+    )
+    // The others ask for 8 each (16 of a fair 26.7), but send 20 Attempts each (40) with their
+    // retries, and 70% of those are rejected.
+    for (let t = 6; t <= 20; t++) {
+      const other = { demand: 8, offeredLoad: 20, allowed: 6 }
+      diagnoser.add(
+        snapshotAt(t * 1000, {
+          perClient: { a: { demand: 30, offeredLoad: 30, allowed: 30 }, b: other, c: other },
+        }),
+        { bucketMs: 100, counts: [] },
+      )
+    }
+    expect(diagnoser.findings()[0]?.severity).toBe('broken')
+  })
+
+  // On the fixture the others lose 60% to 76% of their Attempts with retries on.
+  it.each(['immediate', 'backoff', 'backoff-jitter', 'retry-after'] as const)(
+    'stays broken with "%s" retries on the fixture',
+    (mode) => {
+      const [seen = []] = findingsEachSecond(withRetry(fixture('global'), mode))
+      const broken = seen.slice(5).filter((fs) => noisy(fs)?.severity === 'broken').length
+      expect(broken / (seen.length - 5)).toBeGreaterThan(0.9)
     },
   )
 })
