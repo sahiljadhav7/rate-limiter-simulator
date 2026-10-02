@@ -5,6 +5,7 @@
  */
 import type { VariantConfig } from '../../runner/scenario.ts'
 import type { Finding, Severity } from '../../sim/index.ts'
+import { SEVERITY_NAMES } from '../panel/diagnosis-card.ts'
 import { KEY_SCOPE_NAMES, SHORT_ALGORITHM_NAMES } from '../panel/limiter-names.ts'
 
 /** True if `names` has `name` more than once. */
@@ -51,4 +52,17 @@ export function movedTab(index: number, key: string, count: number): number | nu
     default:
       return null
   }
+}
+
+/**
+ * What the Compare tab says broke in a Variant: its Root Cause's Failure Mode and severity, in
+ * words as the diagnosis card says it. Contributing Findings stay on the Variant's own tab.
+ */
+export function rootCause(
+  findings: readonly Finding[],
+): { readonly label: string; readonly severity: Severity; readonly word: string } | null {
+  const cause = findings.find((f) => f.role === 'root-cause')
+  return cause
+    ? { label: cause.label, severity: cause.severity, word: SEVERITY_NAMES[cause.severity] }
+    : null
 }

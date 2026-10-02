@@ -9,6 +9,7 @@ import { SCENARIOS } from './scenarios/index.ts'
 import { ScenarioNotes } from './notes/ScenarioNotes.tsx'
 import { ShareButton } from './share/ShareButton.tsx'
 import { parseShareState, shareUrl } from './share/url-state.ts'
+import { ComparePanel } from './tabs/ComparePanel.tsx'
 import { TabBar } from './tabs/TabBar.tsx'
 import { shortNames, tabBadge } from './tabs/tabs.ts'
 import { PHONE_QUERY, useMediaQuery } from './use-media-query.ts'
@@ -158,6 +159,14 @@ function ScenarioRun(props: {
             />
           ) : null
         })}
+        <ComparePanel
+          id={`${panelsId}-compare`}
+          scenario={scenario}
+          variants={view.variants}
+          names={names}
+          open={openTab === scenario.variants.length}
+          onOpen={setOpenTab}
+        />
       </main>
       <TabBar
         tabs={scenario.variants.map((config, i) => ({

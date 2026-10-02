@@ -115,3 +115,72 @@
     display: none;
   }
 }
+
+/* The Compare tab: on a phone, and only while open. */
+.compare {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .compare[data-tab-open='true'] {
+    display: grid;
+    gap: var(--sp-4);
+  }
+}
+
+.compare-variant {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.compare-variant + .compare-variant {
+  padding-top: var(--sp-4);
+  border-top: var(--bw) solid var(--border);
+}
+
+.compare-name {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+/* The name opens its tab: plain text that underlines on hover, 44px tall to tap. */
+.compare-open {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.compare-open:hover {
+  text-decoration: underline;
+}
+
+.compare-open:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+.compare-cause {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  margin: 0;
+  font-weight: var(--fw-med);
+}
+
+/*
+ * The severity in words, as on the diagnosis card, so it is not shown by colour alone. Two
+ * classes, so it beats .label's colour, which ties with one class and loads later (CLAUDE.md).
+ */
+.compare-cause .compare-severity {
+  color: var(--danger);
+}
+
+.compare-cause[data-severity='warn'] .compare-severity {
+  color: var(--warn);
+}

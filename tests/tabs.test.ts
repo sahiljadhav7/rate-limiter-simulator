@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { VariantConfig } from '../src/runner/scenario.ts'
 import type { Finding, LimiterSpec } from '../src/sim/index.ts'
-import { movedTab, shortNames, tabBadge } from '../src/ui/tabs/tabs.ts'
+import { movedTab, rootCause, shortNames, tabBadge } from '../src/ui/tabs/tabs.ts'
 
 const retry = { timeoutMs: 1000, retry: 'none', maxAttempts: 1 } as const
 const variant = (label: string, limiter: LimiterSpec): VariantConfig => ({ label, limiter, retry })
@@ -89,5 +89,33 @@ describe('movedTab', () => {
 
   it('ignores any other key', () => {
     expect(movedTab(1, 'Enter', 3)).toBeNull()
+  })
+})
+
+describe('rootCause', () => {
+  it('is null with no active Finding', () => {
+    expect(rootCause([])).toBeNull()
+  })
+
+  it("names the Root Cause's Failure Mode and severity in words", () => {
+    expect(rootCause([finding('warn')])).toEqual({
+      label: 'Queue overflow',
+      severity: 'warn',
+      word: 'Warning',
+    })
+  })
+
+  it('leaves out Contributing Findings', () => {
+    const contributing: Finding = {
+      ...finding('broken'),
+      id: 'saturation',
+      label: 'Saturation',
+      role: 'contributing',
+    }
+    expect(rootCause([contributing, finding('broken')])).toEqual({
+      label: 'Queue overflow',
+      severity: 'broken',
+      word: 'Broken',
+    })
   })
 })

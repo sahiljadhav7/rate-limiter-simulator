@@ -8,7 +8,7 @@ import { DiagnosisSlot } from './DiagnosisCard.tsx'
 import { ALGORITHM_NAMES, KEY_SCOPE_NAMES } from './limiter-names.ts'
 import { nodeState } from './node-state.ts'
 import { PipelineStrip } from './PipelineStrip.tsx'
-import { DASH, formatNumber, formatShare, panelStats } from './stats.ts'
+import { DASH, formatNumber, formatShare, panelStats, type PanelStats } from './stats.ts'
 import './panel.css'
 
 /**
@@ -36,6 +36,40 @@ function Stat(props: {
         {value === DASH ? null : <span className="unit">{unit}</span>}
       </dd>
     </div>
+  )
+}
+
+/**
+ * The stat row over the last 5 seconds (DESIGN.md "Stat"), with Attempt p99 as the headline.
+ * Goodput carries the Backend's Finding, as it is what a failing Backend costs. The Compare tab
+ * shows the same row, so its numbers are the panel's.
+ */
+export function StatRow(props: {
+  readonly stats: PanelStats
+  readonly backendSeverity: Severity | null
+}) {
+  const { stats, backendSeverity } = props
+  return (
+    <dl className="stats" aria-label="Last 5 seconds">
+      <Stat label="Offered Load" value={formatNumber(stats.offeredLoad)} unit="/s" />
+      <Stat
+        label="Goodput"
+        value={formatNumber(stats.goodput)}
+        unit="/s"
+        severity={backendSeverity}
+      />
+      <Stat label="Rejected" value={formatShare(stats.rejectedShare)} unit="%" />
+      <Stat
+        label={
+          <>
+            Attempt <abbr title="99th percentile">p99</abbr>
+          </>
+        }
+        value={formatNumber(stats.p99)}
+        unit="ms"
+        hero
+      />
+    </dl>
   )
 }
 
@@ -108,27 +142,7 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
         </span>
       </header>
       <PipelineStrip stats={stats} backend={backendState} />
-      <dl className="stats" aria-label="Last 5 seconds">
-        <Stat label="Offered Load" value={formatNumber(stats.offeredLoad)} unit="/s" />
-        {/* Goodput is what a failing Backend costs, so it carries the Backend's Finding. */}
-        <Stat
-          label="Goodput"
-          value={formatNumber(stats.goodput)}
-          unit="/s"
-          severity={backendState.severity}
-        />
-        <Stat label="Rejected" value={formatShare(stats.rejectedShare)} unit="%" />
-        <Stat
-          label={
-            <>
-              Attempt <abbr title="99th percentile">p99</abbr>
-            </>
-          }
-          value={formatNumber(stats.p99)}
-          unit="ms"
-          hero
-        />
-      </dl>
+      <StatRow stats={stats} backendSeverity={backendState.severity} />
       <VariantCharts
         variant={variant}
         config={config}
