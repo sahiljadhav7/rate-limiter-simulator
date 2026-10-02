@@ -573,8 +573,10 @@ export function saturationRule(backend: BackendSpec): Rule {
 
   /**
    * Whether `busy` and `ratio` reach `level`, or stay within its margins once `held`. With no
-   * p99 (nothing finished in time to be measured), a held level stays while the Backend is
-   * still that busy: a Backend so stalled that every caller gave up is not healthy.
+   * p99 (nothing finished in time to be measured), busy alone decides: a Backend so stalled
+   * that every caller gave up is not healthy. It can stall before a raised p99 is ever measured:
+   * a limit of 120/s in front of 80/s, Demand raised from 40 to 120/s, peaks at 1.9x the
+   * baseline on seed 5 before nothing finishes (.scratch/new-scenarios/collapse-timeline.ts 5).
    */
   function reaches(
     level: { readonly busy: number; readonly ratio: number },
@@ -582,7 +584,7 @@ export function saturationRule(backend: BackendSpec): Rule {
     ratio: number | null,
     held: boolean,
   ): boolean {
-    if (!held) return ratio !== null && busy >= level.busy && ratio > level.ratio
+    if (!held) return busy >= level.busy && (ratio === null || ratio > level.ratio)
     const busyEnough = busy >= level.busy - SATURATION_BUSY_MARGIN
     return busyEnough && (ratio === null || ratio > level.ratio - SATURATION_RATIO_MARGIN)
   }

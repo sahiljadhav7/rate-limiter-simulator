@@ -70,7 +70,10 @@ describe('the saturation rule', () => {
     [0.97, 600, 'warn'], // busy enough for broken, but only 2.6x
     [0.97, 400, 'healthy'], // busy but quick: a Backend doing its job at full use
     [0.7, 800, 'healthy'], // slow but not busy: not saturation
-    [0.97, null, 'healthy'], // nothing finished in time, so no p99 to enter on
+    // Nothing finished in time, so no p99: a Backend that busy is stalled, judged on busy alone.
+    [0.97, null, 'broken'],
+    [0.9, null, 'warn'],
+    [0.5, null, 'healthy'], // no p99 because little arrives: quiet, not stalled
   ] as const)('busy %s with p99 %s ms is %s', (busy, p99, severity) => {
     expect(severities(repeat(5, [busy, p99] as const)).at(-1)).toBe(severity)
   })
