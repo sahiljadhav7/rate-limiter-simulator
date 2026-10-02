@@ -187,6 +187,25 @@
   box-shadow: var(--shadow-sm);
 }
 
+/*
+ * A touch screen gets 44px targets (DESIGN.md "Accessibility"); a mouse keeps 32 to 36px. The
+ * slider's input grows to 44px tall around the same track and thumb, so only its hit area
+ * changes. Fields grow in app.css, next to their own rule, which loads later.
+ */
+@media (pointer: coarse) {
+  .btn {
+    height: 44px;
+  }
+
+  .btn-icon {
+    width: 44px;
+  }
+
+  .demand-track input {
+    height: 44px;
+  }
+}
+
 /* Tick labels under the track, each centred on its value. */
 .demand-ticks span {
   position: absolute;

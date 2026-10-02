@@ -114,12 +114,28 @@
 
 /*
  * The pill is drawn 18px tall but takes clicks over 32px (DESIGN.md "Accessibility"): the
- * inset counts from inside its 1px border, so 8px each way reaches 7px past the edge.
+ * inset counts from inside its 1px border, so 8px each way reaches 7px past the edge. Rows of
+ * pills are one hit area apart, so two never share a click.
  */
+.chart-marker-pill {
+  --marker-pill-step: 32px;
+}
+
 .chart-marker-pill::before {
   content: '';
   position: absolute;
   inset: -8px 0;
+}
+
+/* On a touch screen the hit area is 44px (14px past the border each way), and rows follow. */
+@media (pointer: coarse) {
+  .chart-marker-pill {
+    --marker-pill-step: 44px;
+  }
+
+  .chart-marker-pill::before {
+    inset: -14px 0;
+  }
 }
 
 .chart-marker-pill:hover {

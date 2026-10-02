@@ -92,11 +92,11 @@ function pillWidth(text: string): number {
 }
 
 /**
- * A marker pill's drawn height, and the step between rows of them, in px: its hit area is 32
- * px tall (DESIGN.md "Accessibility"), so rows 32 px apart never share a click.
+ * A marker pill's drawn height in px. The step between rows of them is `--marker-pill-step` in
+ * chart.css, the height of the pill's hit area (32 px, or 44 px on a touch screen), so rows never
+ * share a tap (DESIGN.md "Accessibility").
  */
 const MARKER_PILL_HEIGHT = 18
-const MARKER_PILL_STEP = 32
 /** The least space between two pills on one row, in px. */
 const MARKER_PILL_GAP = 4
 
@@ -348,7 +348,7 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
                 className="chart-marker-pill"
                 style={{
                   left: `${(left / width) * 100}%`,
-                  top: TOP + (lanes[i] ?? 0) * MARKER_PILL_STEP,
+                  top: `calc(${TOP}px + ${lanes[i] ?? 0} * var(--marker-pill-step))`,
                   width: pillPx,
                   height: MARKER_PILL_HEIGHT,
                 }}

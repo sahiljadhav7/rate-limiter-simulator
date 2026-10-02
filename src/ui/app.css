@@ -44,6 +44,13 @@
   font-size: var(--fs-sm);
 }
 
+/* 44px on a touch screen (DESIGN.md "Accessibility"). */
+@media (pointer: coarse) {
+  .field {
+    height: 44px;
+  }
+}
+
 .field:focus-visible {
   outline: 2px solid var(--accent-ring);
   outline-offset: 2px;

@@ -240,7 +240,7 @@ Hand-drawn SVG polylines, with no chart library.
 - The Demand slider is a native `input[type=range]` with `aria-valuetext` giving the real rate ("120 requests per second"), since the scale is logarithmic.
 - Every chart has an `aria-label` summarising its current state ("Allowed in last window: 196, limit 100"), and each panel's stat row is real text.
 - State is never shown by colour alone: failing nodes also say FAILING, and Findings carry a label and a pill.
-- Hit targets are at least 32px on desktop and 44px on touch.
+- Hit targets are at least 32px on desktop and 44px on touch: under `@media (pointer: coarse)`, at any width, since the finger sets the size, not the screen.
 
 ## What not to borrow
 
