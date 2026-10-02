@@ -180,6 +180,23 @@
   max-width: 100%;
 }
 
+/* An empty chart's words, centred on its plot in label type (.scratch/polish/ decisions 14, 15). */
+.chart-empty {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-num);
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
 .chart-plot:focus-visible {
   outline: 2px solid var(--accent-ring);
   outline-offset: 2px;

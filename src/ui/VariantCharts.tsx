@@ -125,6 +125,7 @@ export const VariantCharts = memo(function VariantCharts({
       <TimeSeriesChart
         title="How long Attempts took (milliseconds, last 5 seconds)"
         unit="milliseconds"
+        noValueText="No Attempt succeeded in the last 5 seconds"
         nowMs={nowMs}
         markers={markers}
         series={[

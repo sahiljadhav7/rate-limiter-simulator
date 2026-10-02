@@ -14,6 +14,7 @@ import {
   toPolylines,
   type Point,
 } from './geometry.ts'
+import { chartEmptyState } from './empty-state.ts'
 import { useElementWidth } from './use-element-width.ts'
 import './chart.css'
 
@@ -65,6 +66,11 @@ export interface TimeSeriesChartProps {
   readonly overLimit?: OverLimit
   /** Unit for the summary read by screen readers, such as "per second" or "milliseconds". */
   readonly unit: string
+  /**
+   * What to say when the visible window has points but no value, such as the latency chart when
+   * no Attempt succeeded. Without it, such a chart draws its gaps.
+   */
+  readonly noValueText?: string
 }
 
 /**
@@ -145,6 +151,7 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
     markerPills = false,
     overLimit,
     unit,
+    noValueText,
   } = props
   const clipId = useId()
   const [measureRef, measuredWidth] = useElementWidth<HTMLElement>()
@@ -158,6 +165,8 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
    */
   const [hoverPx, setHoverPx] = useState<number | null>(null)
   const domain = timeDomain(nowMs)
+  /** Words in place of the plot, or null: an empty chart draws no made-up scale. */
+  const empty = chartEmptyState(series, domain, noValueText)
   const x = linearScale(domain, [0, plotRight])
   let highest = 0
   for (const s of series) for (const p of s.points) if (p.v !== null && p.v > highest) highest = p.v
@@ -212,13 +221,14 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
     }
   }
 
-  const summary =
-    `${title}: ` +
-    series.map((s) => `${s.label} ${asText(latest(s.points), 'no value')}`).join(', ') +
-    (unit ? ` ${unit}` : '') +
-    referenceLines.map((line) => `; ${line.label} ${asText(line.value, 'no value')}`).join('') +
-    (peakText ? `; ${peakText}` : '') +
-    visibleMarkers.map((m) => `; ${m.label} started at ${(m.t / 1000).toFixed(1)} s`).join('')
+  const summary = empty
+    ? `${title}: ${empty}`
+    : `${title}: ` +
+      series.map((s) => `${s.label} ${asText(latest(s.points), 'no value')}`).join(', ') +
+      (unit ? ` ${unit}` : '') +
+      referenceLines.map((line) => `; ${line.label} ${asText(line.value, 'no value')}`).join('') +
+      (peakText ? `; ${peakText}` : '') +
+      visibleMarkers.map((m) => `; ${m.label} started at ${(m.t / 1000).toFixed(1)} s`).join('')
 
   return (
     <figure className="chart" ref={measureRef}>
@@ -281,7 +291,7 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
                 ) : null}
               </g>
             ) : null}
-            {gridValues(yMax).map((value) => (
+            {(empty ? [] : gridValues(yMax)).map((value) => (
               <g key={value}>
                 <line className="chart-grid" x1="0" x2={plotRight} y1={y(value)} y2={y(value)} />
                 <text className="chart-axis" x={plotRight + 6} y={y(value) + 3.5}>
@@ -338,6 +348,12 @@ export const TimeSeriesChart = memo(function TimeSeriesChart(props: TimeSeriesCh
               <line className="chart-crosshair" x1={hoverX} x2={hoverX} y1="0" y2={HEIGHT} />
             ) : null}
           </svg>
+        ) : null}
+        {layout && empty ? (
+          // The svg's aria-label says the same, so this is for the eye only.
+          <p className="chart-empty" style={{ width: plotRight }} aria-hidden="true">
+            {empty}
+          </p>
         ) : null}
         {/* HTML, not SVG: a control inside role="img" is hidden from screen readers. */}
         {layout && markerPills
