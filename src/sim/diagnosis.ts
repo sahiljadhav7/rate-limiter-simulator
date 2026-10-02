@@ -12,6 +12,7 @@ import { bucketAt } from './buckets.ts'
 import { allowedPerSecond, type FixedWindowSpec, type KeyBy, type LimiterSpec } from './limiter.ts'
 import type { RetryPolicy } from './retry-policy.ts'
 import { QUICK_RETRY_MS, SNAPSHOT_MS, WARM_UP_MS, type Snapshot } from './metrics.ts'
+import type { ClientId } from './traffic.ts'
 import { rollingWindowCounts } from './window-counts.ts'
 
 /** A named way the simulated system goes wrong. */
@@ -23,6 +24,7 @@ export type FailureMode =
   | 'limit-too-loose'
   | 'limit-too-tight'
   | 'goodput-collapse'
+  | 'noisy-neighbor'
 
 /** A Cause is a design mistake; a Symptom is what it does to the system. */
 export type FindingKind = 'cause' | 'symptom'
@@ -41,6 +43,7 @@ export const FAILURE_MODES: Readonly<
   'limit-too-loose': { label: 'Limit too loose', kind: 'cause' },
   'limit-too-tight': { label: 'Limit too tight', kind: 'cause' },
   'goodput-collapse': { label: 'Goodput collapse', kind: 'symptom' },
+  'noisy-neighbor': { label: 'Noisy neighbor', kind: 'cause' },
 }
 
 /**
@@ -327,6 +330,41 @@ export const GOODPUT_COLLAPSE_RATIO_MARGIN = 0.1
  * 100% busy throughout.
  */
 export const GOODPUT_COLLAPSE_BUSY = 0.8
+
+/**
+ * How many of the newest Snapshots noisy neighbor judges, and in how many of them the top Client
+ * must have sent more than its fair share of the limit: all 10, so its greed is steady. Edge
+ * burst's scripted bursts all come from one Client, which then takes up to 98% of what is
+ * allowed over 5 s, but it is over its fair share in at most 8 of 10 seconds (with "Wait for
+ * Retry-After"; 5 with no retry); the greedy fixture's Client is over it in all 10, in every
+ * window (.scratch/more-rules/spec.md "Measured").
+ */
+export const NOISY_NEIGHBOR_SECONDS = 10
+
+/**
+ * The top Client's share of allowed Attempts over the 10 s above which it may be a noisy neighbor
+ * (BaseConcept: 50%). With no greedy Client the top one has 38% to 53% (Edge burst at 3x,
+ * Backend overload); the greedy fixture's, 81% to 88%.
+ */
+export const NOISY_NEIGHBOR_TOP_SHARE = 0.5
+
+/**
+ * The share of the other Clients' Attempts rejected, while together they send under their fair
+ * share, at which noisy neighbor becomes `warn`: they are being turned away for room the greedy
+ * Client took. Behind a global key every Client is rejected at the same rate, so comparing
+ * allowed with offered shares reads noise (0.63 to 1.36 in the fixture); the others' rejections
+ * themselves are what a greedy Client costs. The fixture's others lose 17% to 46%.
+ */
+export const NOISY_NEIGHBOR_WARN_REJECTED = 0.1
+
+/** The others' rejected share for `broken`: one in five of their Attempts turned away. */
+export const NOISY_NEIGHBOR_BROKEN_REJECTED = 0.2
+
+/**
+ * Noisy neighbor leaves a severity only once the others' rejected share falls this far under
+ * the threshold that entered it (broken under 15%, warn under 5%).
+ */
+export const NOISY_NEIGHBOR_REJECTED_MARGIN = 0.05
 
 /**
  * The first backoff, in ms, a fix gives a Retry Policy that had none: the same as the Retry
@@ -864,13 +902,28 @@ export function limitTooLooseRule(backend: BackendSpec, limiter: LimiterSpec): R
 }
 
 /**
+ * For a rule that judges more than one window: keeps the newest `count` Snapshots across calls.
+ * Returns a function taking each window and giving them, oldest first, or null until there are
+ * `count`.
+ */
+function createRecent(count: number) {
+  const recent: Snapshot[] = []
+  return (window: readonly Snapshot[]): readonly Snapshot[] | null => {
+    for (const snapshot of window) {
+      if (snapshot.t > (recent.at(-1)?.t ?? -Infinity)) recent.push(snapshot)
+    }
+    while (recent.length > count) recent.shift()
+    return recent.length < count ? null : recent
+  }
+}
+
+/**
  * The limit too tight rule: over the last LIMIT_TOO_TIGHT_SECONDS, the steady Demand above what
  * the Limiter allows, a large share rejected, and the Backend mostly idle, so the limit turns
- * away work the Backend could have done. It keeps its own Snapshots, as it judges more than one
- * window.
+ * away work the Backend could have done.
  */
 export function limitTooTightRule(limiter: LimiterSpec): Rule {
-  const recent: Snapshot[] = []
+  const newest = createRecent(LIMIT_TOO_TIGHT_SECONDS)
   let severity: Severity | null = null
   const fixes: readonly Fix[] = [{ text: 'Try a higher limit, toward what the Backend can serve' }]
 
@@ -887,11 +940,8 @@ export function limitTooTightRule(limiter: LimiterSpec): Rule {
   return {
     id: 'limit-too-tight',
     judge(window) {
-      for (const snapshot of window) {
-        if (snapshot.t > (recent.at(-1)?.t ?? -Infinity)) recent.push(snapshot)
-      }
-      while (recent.length > LIMIT_TOO_TIGHT_SECONDS) recent.shift()
-      if (recent.length < LIMIT_TOO_TIGHT_SECONDS) return null
+      const recent = newest(window)
+      if (recent === null) return null
       const keys =
         limiter.keyBy === 'client'
           ? Math.max(1, Object.keys(recent.at(-1)?.perClient ?? {}).length)
@@ -989,13 +1039,102 @@ export function goodputCollapseRule({ slots }: BackendSpec): Rule {
   }
 }
 
-/** The rules every Variant is diagnosed with: boundary burst only behind a fixed window. */
+/**
+ * The noisy neighbor rule, for a Limiter with one global key: over the last
+ * NOISY_NEIGHBOR_SECONDS, one Client sends more than its fair share of the limit every second and
+ * takes most of what is allowed, while the other Clients, together under their fair share, are
+ * turned away. Keyed per Client, each has its own limit and nobody can crowd anyone out.
+ */
+export function noisyNeighborRule(limiter: LimiterSpec): Rule {
+  const newest = createRecent(NOISY_NEIGHBOR_SECONDS)
+  let severity: Severity | null = null
+  const limit = allowedPerSecond(limiter)
+  const fixes: readonly Fix[] = [
+    {
+      text: 'Try a limit per Client, so each Client has its own share and one cannot use up the rest',
+    },
+    { text: 'Try weighted fair queuing, so each Client gets its turn (not modelled here)' },
+  ]
+
+  /** The severity after a span where the others lost `share`, given the one before. */
+  function nextSeverity(share: number): Severity | null {
+    const margin = NOISY_NEIGHBOR_REJECTED_MARGIN
+    const broken = NOISY_NEIGHBOR_BROKEN_REJECTED
+    const warn = NOISY_NEIGHBOR_WARN_REJECTED
+    if (share > broken || (severity === 'broken' && share > broken - margin)) return 'broken'
+    if (share > warn || (severity !== null && share > warn - margin)) return 'warn'
+    return null
+  }
+
+  return {
+    id: 'noisy-neighbor',
+    judge(window) {
+      const recent = newest(window)
+      if (recent === null) return null
+      // Each Client's Attempts over the span, sent and allowed.
+      const totals = new Map<ClientId, { offered: number; allowed: number }>()
+      for (const snapshot of recent) {
+        for (const [id, c] of Object.entries(snapshot.perClient)) {
+          const t = totals.get(id) ?? { offered: 0, allowed: 0 }
+          totals.set(id, { offered: t.offered + c.offeredLoad, allowed: t.allowed + c.allowed })
+        }
+      }
+      const ranked = [...totals].sort(([, a], [, b]) => b.allowed - a.allowed)
+      const [topEntry] = ranked
+      const allowedAll = ranked.reduce((t, [, c]) => t + c.allowed, 0)
+      if (topEntry === undefined || ranked.length < 2 || allowedAll === 0) {
+        severity = null
+        return null
+      }
+      const [top, mine] = topEntry
+      const clients = ranked.length
+      const fairShare = limit / clients
+      const topShare = mine.allowed / allowedAll
+      const steady = recent.every((s) => (s.perClient[top]?.offeredLoad ?? 0) > fairShare)
+      const othersOffered = ranked.reduce((t, [, c]) => t + c.offered, 0) - mine.offered
+      const othersPerSecond = othersOffered / recent.length
+      const othersFair = fairShare * (clients - 1)
+      const othersRejected =
+        othersOffered === 0 ? 0 : 1 - (allowedAll - mine.allowed) / othersOffered
+      const crowded = topShare > NOISY_NEIGHBOR_TOP_SHARE && steady && othersPerSecond < othersFair
+      severity = crowded ? nextSeverity(othersRejected) : null
+      if (severity === null) return null
+      const perSecond = (n: number) => `${n.toFixed(1)}/s`
+      const limitText = `${Number.isInteger(limit) ? limit : limit.toFixed(1)}/s`
+      return {
+        severity,
+        evidence: [
+          { metric: 'Client', value: top },
+          { metric: 'Its share of allowed', value: percent(topShare) },
+          {
+            metric: 'Others sent',
+            value: `${perSecond(othersPerSecond)} of a fair ${perSecond(othersFair)}`,
+          },
+          { metric: 'Others rejected', value: percent(othersRejected) },
+        ],
+        why:
+          `Client ${top} sent more than its fair share of the limit (${perSecond(fairShare)}, ` +
+          `${limitText} shared by ${clients} Clients) in each of the last ` +
+          `${NOISY_NEIGHBOR_SECONDS} seconds and got ${percent(topShare)} of what the Limiter ` +
+          `allowed, so the other Clients, sending ${perSecond(othersPerSecond)} between them, ` +
+          `had ${percent(othersRejected)} of their Attempts rejected.`,
+        fixes,
+      }
+    },
+  }
+}
+
+/**
+ * The rules every Variant is diagnosed with: boundary burst only behind a fixed window, noisy
+ * neighbor only behind a global key.
+ */
 export function defaultRules({ backend, limiter, retry }: DiagnoserOptions): Rule[] {
   return [
     ...(limiter.algo === 'fixed-window' ? [boundaryBurstRule(limiter)] : []),
     retryStormRule(retry),
     limitTooLooseRule(backend, limiter),
     limitTooTightRule(limiter),
+    ...(limiter.keyBy === 'global' ? [noisyNeighborRule(limiter)] : []),
     saturationRule(backend, limiter),
     queueOverflowRule(backend, limiter),
     goodputCollapseRule(backend),

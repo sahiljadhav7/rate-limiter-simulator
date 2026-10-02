@@ -91,7 +91,8 @@ const stormAndTight = {
  * with jitter" on every Variant (seed as shipped, 120 s; .scratch/diagnosis/table-probe.ts).
  * Saturation fires in none of them: bursty traffic keeps the Backend under 26% busy over 5 s.
  * So limit too loose, which needs a saturated Backend, fires in none of them either, nor goodput
- * collapse, which needs it at least 80% busy.
+ * collapse, which needs it at least 80% busy. Noisy neighbor fires in none: Edge burst's bursts
+ * all come from one Client, but it is never over its fair share for 10 seconds running.
  */
 const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 10, undefined, [none, none]],
