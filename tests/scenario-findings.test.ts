@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createRunner } from '../src/runner/runner.ts'
 import type { Scenario } from '../src/runner/scenario.ts'
 import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
+import { noisyNeighborScenario } from '../src/ui/scenarios/noisy-neighbor.ts'
 import { withRetryMode, type RetryMode } from '../src/ui/controls/retry-options.ts'
 
 /** Run length for each row: long enough for many window edges and a settled 5 s loss share. */
@@ -56,6 +57,11 @@ type Row = readonly [
 const none = { modes: {}, roots: [] }
 const overflow = { modes: { 'queue-overflow': 'broken' }, roots: ['queue-overflow'] }
 const storm = { modes: { 'retry-storm': 'broken' }, roots: ['retry-storm'] }
+const noisy = { modes: { 'noisy-neighbor': 'broken' }, roots: ['noisy-neighbor'] }
+const stormAndNoisy = {
+  modes: { 'retry-storm': 'warn', 'noisy-neighbor': 'broken' },
+  roots: ['retry-storm'],
+}
 const stormAndOverflow = {
   modes: { 'retry-storm': 'broken', 'queue-overflow': 'broken' },
   roots: ['retry-storm'],
@@ -63,12 +69,16 @@ const stormAndOverflow = {
 
 /**
  * Every Scenario at its default Demand and at 3x, as is and with each Retry Policy on every
- * Variant (seed as shipped, 120 s; .scratch/diagnosis/table-probe.ts).
- * Saturation fires in none of them: bursty traffic keeps the Backend under 26% busy over 5 s.
- * So limit too loose, which needs a saturated Backend, fires in none of them either, nor goodput
- * collapse, which needs it at least 80% busy. Limit too tight and noisy neighbor fire in none:
- * the bursts fill at most 2 of every 10 seconds, so neither the Demand nor any one Client is over
- * the limit steadily.
+ * Variant (seed as shipped, 120 s; .scratch/diagnosis/table-probe.ts,
+ * .scratch/new-scenarios/noisy-retry.ts; Noisy neighbor's 2x to 4x tests,
+ * .scratch/new-scenarios/noisy-probe.ts).
+ * Saturation fires in none of them: Backend overload's bursty traffic keeps the Backend under 26%
+ * busy over 5 s, and Noisy neighbor's stays under 67%. So limit too loose, which needs a
+ * saturated Backend, fires in none of them either, nor goodput collapse, which needs it at least
+ * 80% busy. In Backend overload limit too tight and noisy neighbor fire in none: the bursts fill
+ * at most 2 of every 10 seconds, so neither the Demand nor any one Client is over the limit
+ * steadily. In Noisy neighbor limit too tight stays quiet as the Backend is about 50% busy, over
+ * the 40% it needs; noisy neighbor fires only behind the limit shared by all.
  */
 const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 10, undefined, [none, none]],
@@ -82,6 +92,20 @@ const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 30, 'backoff', [overflow, none]],
   ['Backend overload', backendOverloadScenario, 30, 'backoff-jitter', [overflow, none]],
   ['Backend overload', backendOverloadScenario, 30, 'retry-after', [overflow, none]],
+  ['Noisy neighbor', noisyNeighborScenario, 20, undefined, [none, none]],
+  ['Noisy neighbor', noisyNeighborScenario, 20, 'immediate', [none, none]],
+  ['Noisy neighbor', noisyNeighborScenario, 20, 'backoff', [none, none]],
+  ['Noisy neighbor', noisyNeighborScenario, 20, 'backoff-jitter', [none, none]],
+  ['Noisy neighbor', noisyNeighborScenario, 20, 'retry-after', [none, none]],
+  ['Noisy neighbor', noisyNeighborScenario, 60, undefined, [noisy, none]],
+  // Retries at once: the rejected Requests come straight back, a storm and the Root Cause; the
+  // greedy Client still crowds the others out of the shared limit. Per Client only a's are
+  // rejected, and its storm reaches amber on some seeds (0 to 11 s of 106 over seeds 1 to 8); this
+  // row runs seed 1, where it does not.
+  ['Noisy neighbor', noisyNeighborScenario, 60, 'immediate', [stormAndNoisy, none]],
+  ['Noisy neighbor', noisyNeighborScenario, 60, 'backoff', [noisy, none]],
+  ['Noisy neighbor', noisyNeighborScenario, 60, 'backoff-jitter', [noisy, none]],
+  ['Noisy neighbor', noisyNeighborScenario, 60, 'retry-after', [noisy, none]],
 ]
 
 describe('Scenario Findings table', () => {
@@ -126,4 +150,19 @@ describe('Scenario Findings table', () => {
     expect(sliding).toBeGreaterThanOrEqual(55)
     expect(token).toBe(0)
   })
+
+  it('Noisy neighbor at 40/s (2x): the shared limit is starting to crowd the others out', () => {
+    const [shared, perClient] = worstFindings(noisyNeighborScenario, 40)
+    expect(shared).toMatchObject({ worst: 'warn', rootCauses: ['noisy-neighbor'] })
+    expect(perClient?.worst).toBe('none')
+  })
+
+  it.each([60, 80])(
+    'Noisy neighbor at %s/s (3x, 4x): the shared limit fails with noisy neighbor as the Root Cause, a limit per Client never',
+    (demandRps) => {
+      const [shared, perClient] = worstFindings(noisyNeighborScenario, demandRps)
+      expect(shared).toMatchObject({ worst: 'broken', rootCauses: ['noisy-neighbor'] })
+      expect(perClient?.worst).toBe('none')
+    },
+  )
 })
