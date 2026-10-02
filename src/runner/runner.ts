@@ -126,9 +126,9 @@ export interface Runner {
    * seed, with no live change replayed: a caller that wants to keep the current Demand puts it
    * in `next`'s traffic, as a shared link does. Replaying would move the Demand slider on its
    * own as the run passed the times of the old changes. The speed and whether it is paused stay
-   * as they were; a later reset returns to `next`. Throws a RangeError, leaving the run
-   * unchanged, if `next` is invalid or has other Clients or another number of Variants than the
-   * current Scenario, which the panels depend on.
+   * as they were; a later reset returns to `next`. `next` may have more or fewer Variants, as when
+   * a fix is applied or removed, and the view's Variants follow it. Throws a RangeError, leaving
+   * the run unchanged, if `next` is invalid or has other Clients than the current Scenario.
    */
   restart(next: Scenario): void
   /** Throws a RangeError for a speed not in SPEEDS. */
@@ -162,13 +162,8 @@ interface Run {
   readonly variants: readonly RunVariant[]
 }
 
-/** Throws a RangeError unless `next` has the same Clients and number of Variants as `current`. */
-function checkSameShape(current: Scenario, next: Scenario): void {
-  if (next.variants.length !== current.variants.length) {
-    throw new RangeError(
-      `A restart keeps ${current.variants.length} Variants, got ${next.variants.length}`,
-    )
-  }
+/** Throws a RangeError unless `next` has the same Clients as `current`. */
+function checkSameClients(current: Scenario, next: Scenario): void {
   const clients = (s: Scenario) => s.traffic.clients.join(', ')
   if (clients(next) !== clients(current)) {
     throw new RangeError(`A restart keeps the Clients ${clients(current)}, got ${clients(next)}`)
@@ -270,7 +265,8 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
       run.source.trim()
     },
     restart(next) {
-      checkSameShape(current, next)
+      checkScenario(next)
+      checkSameClients(current, next)
       const nextRun = startRun(next)
       current = next
       run = nextRun

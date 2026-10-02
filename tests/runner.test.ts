@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { createRunner, FRAME_CAP_MS, type Runner } from '../src/runner/runner.ts'
+import { applyFix, removeFix } from '../src/runner/apply-fix.ts'
 import { subBucketMsFor, type Scenario } from '../src/runner/scenario.ts'
 import { createDiagnoser } from '../src/sim/diagnosis.ts'
 import { createEngine } from '../src/sim/engine.ts'
 import { createLimiter } from '../src/sim/limiter.ts'
 import { createStreams } from '../src/sim/rng.ts'
 import { createTrafficSource, type ControlChange } from '../src/sim/traffic-source.ts'
+import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
 
 /**
  * Three Variants on traffic that keeps every path busy: 200 rps against Limiters allowing 120
@@ -517,13 +519,46 @@ describe('restart', () => {
     expect(results(runner)).toEqual(restarted)
   })
 
-  it('throws a RangeError, leaving the run unchanged, for other Variants or Clients', () => {
+  it('runs a fix beside its original, which replays exactly as on its own; and back without it', () => {
+    for (const seed of [1, 2, 3]) {
+      // At 30/s the sliding counter overflows its queue, so more slots really changes its run.
+      const authored = {
+        ...backendOverloadScenario,
+        seed,
+        traffic: { ...backendOverloadScenario.traffic, demandRps: 30 },
+      }
+      const runner = createRunner(authored, UNLIMITED)
+      tickTo(runner, 4000)
+      const fixed = applyFix(authored, 0, {
+        text: 'Try more Backend slots',
+        patch: { name: 'more slots', backend: { slots: 8 } },
+      })
+      runner.restart(fixed)
+      expect(runner.view().variants.map((v) => v.label)).toEqual([
+        'Sliding window counter',
+        'Sliding window counter, more slots',
+        'Token bucket',
+      ])
+      tickTo(runner, 30_000)
+      const alone = createRunner(authored, UNLIMITED)
+      tickTo(alone, 30_000)
+      const [original, fix, token] = results(runner)
+      const [originalAlone, tokenAlone] = results(alone)
+      expect(original).toEqual(originalAlone)
+      expect(token).toEqual(tokenAlone)
+      expect(fix?.totals).not.toEqual(originalAlone?.totals)
+
+      runner.restart(removeFix(fixed))
+      tickTo(runner, 30_000)
+      expect(results(runner)).toEqual(results(alone))
+    }
+  })
+
+  it('throws a RangeError, leaving the run unchanged, for an invalid Scenario or other Clients', () => {
     const runner = createRunner(scenario, UNLIMITED)
     tickTo(runner, 2000)
     const before = results(runner)
-    expect(() => runner.restart({ ...scenario, variants: scenario.variants.slice(1) })).toThrow(
-      RangeError,
-    )
+    expect(() => runner.restart({ ...scenario, variants: [] })).toThrow(RangeError)
     expect(() =>
       runner.restart({
         ...scenario,
