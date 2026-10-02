@@ -80,9 +80,9 @@ describe('the limit too loose rule', () => {
       'Backend can serve',
       'Busy',
     ])
-    expect(finding?.evidence.slice(0, 3).map((e) => e.value)).toEqual(['0.0%', '10000/s', '80/s'])
+    expect(finding?.evidence.slice(0, 3).map((e) => e.value)).toEqual(['0.0%', '10,000/s', '80/s'])
     expect(finding?.why).toMatch(
-      /^The Limiter allows 10000\/s and turned away 0\.0% of Attempts, but the Backend can serve only 80\/s, so it was busy \d+\.\d% of the time\.$/,
+      /^The Limiter allows 10,000\/s and turned away 0\.0% of Attempts, but the Backend can serve only 80\/s, so it was busy \d+\.\d% of the time\.$/,
     )
     expect(finding?.fixes[0]?.patch?.limiter).toEqual(lets(60, 20))
   })

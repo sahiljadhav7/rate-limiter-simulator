@@ -85,7 +85,7 @@ describe('the limit too tight rule', () => {
       'Busy',
     ])
     expect(finding?.why).toMatch(
-      /^In \d+ of the last 10 seconds more new Requests arrived than the Limiter allows \(\d+\.\d\/s against 20\/s\), so it turned away \d+\.\d% of Attempts while the Backend was busy only \d+\.\d% of the time\.$/,
+      /^In (each|\d+) of the last 10 seconds more new Requests arrived than the Limiter allows \(\d+\.\d\/s against 20\/s\), so it turned away \d+\.\d% of Attempts while the Backend was busy only \d+\.\d% of the time\.$/,
     )
   })
 

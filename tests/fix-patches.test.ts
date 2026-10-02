@@ -44,6 +44,45 @@ const saturationFixture: Scenario = {
   ],
 }
 
+/** A fixture with one Variant behind `limiter`, as .scratch/more-rules/measure.ts defines them. */
+const fixture = (
+  traffic: Scenario['traffic'],
+  backend: Scenario['backend'],
+  limiter: Scenario['variants'][number]['limiter'],
+  timeoutMs: number,
+  controls: Scenario['controls'] = [],
+): Scenario => ({
+  ...saturationFixture,
+  id: 'rs-28-fixture',
+  traffic,
+  backend,
+  controls,
+  variants: [{ label: 'Limiter', limiter, retry: { timeoutMs, maxAttempts: 1, retry: 'none' } }],
+})
+const clients = ['a', 'b', 'c']
+/** Steady Poisson 50/s against a token bucket of 20/s, the Backend serving 80/s. */
+const tightFixture = fixture(
+  { shape: 'poisson', demandRps: 50, clients },
+  { slots: 4, queueLimit: 20, meanMs: 50, cv: 0.5 },
+  { algo: 'token-bucket', keyBy: 'global', capacity: 20, refillPerSec: 20 },
+  1000,
+)
+/** 60/s, then 120/s from 30 s, into a queue of 200 with callers giving up after 500 ms. */
+const collapseFixture = fixture(
+  { shape: 'poisson', demandRps: 60, clients },
+  { slots: 4, queueLimit: 200, meanMs: 50, cv: 1 },
+  { algo: 'token-bucket', keyBy: 'global', capacity: 10_000, refillPerSec: 10_000 },
+  500,
+  [{ atMs: 30_000, change: { kind: 'demand', demandRps: 120 } }],
+)
+/** Client a sends 8 shares of 60/s through a global token bucket of 40/s. */
+const greedyFixture = fixture(
+  { shape: 'poisson', demandRps: 60, clients, greedy: { clientId: 'a', multiplier: 8 } },
+  { slots: 4, queueLimit: 20, meanMs: 50, cv: 0.5 },
+  { algo: 'token-bucket', keyBy: 'global', capacity: 10, refillPerSec: 40 },
+  1000,
+)
+
 /** Seconds from 10 s with `mode` broken and warn in Variant `index`, and its mean Goodput. */
 function measure(sc: Scenario, index: number, mode: FailureMode) {
   const runner = createRunner(sc, { eventBudget: Infinity })
@@ -60,10 +99,10 @@ function measure(sc: Scenario, index: number, mode: FailureMode) {
   return { broken, warn, goodput }
 }
 
-/** The fixes of `mode`'s Finding in Variant `index` once it shows, 30 s into the run. */
+/** The fixes of `mode`'s Finding in Variant `index` once it shows, 60 s into the run. */
 function fixesOf(sc: Scenario, index: number, mode: FailureMode): readonly Fix[] {
   const runner = createRunner(sc, { eventBudget: Infinity })
-  while (runner.view().simMs < 30_000) runner.tick(100)
+  while (runner.view().simMs < 60_000) runner.tick(100)
   const finding = runner.view().variants[index]?.findings.find((f) => f.id === mode)
   if (finding === undefined) throw new Error(`No ${mode} Finding to take fixes from`)
   return finding.fixes
@@ -81,7 +120,8 @@ const cases: readonly (readonly [
   index: number,
   mode: FailureMode,
   asIs: Expected,
-  patched: readonly (readonly [name: string, expected: Expected])[],
+  /** Per fix, in order: its patch's name and what applying it does, or null for a text-only fix. */
+  patched: readonly (readonly [name: string, expected: Expected] | null)[],
 ])[] = [
   [
     'queue overflow, Backend overload at 30/s, sliding window counter',
@@ -141,6 +181,44 @@ const cases: readonly (readonly [
       ['fewer Attempts', { broken: 0, warn: 111, goodput: [10.4, 11.0] }],
     ],
   ],
+  // RS-28's rules, on their fixtures (.scratch/more-rules/patch-probe.ts).
+  [
+    'limit too tight, Poisson 50/s against a token bucket of 20/s',
+    tightFixture,
+    0,
+    'limit-too-tight',
+    { broken: 106, warn: 0, goodput: [19.9, 20.1] },
+    // Clears; Goodput 49.2 to 50.9/s.
+    [['higher limit', { broken: 0, warn: 0, goodput: [49.1, 51.0] }]],
+  ],
+  [
+    'goodput collapse, Demand rising past the Backend with a queue of 200',
+    collapseFixture,
+    0,
+    'goodput-collapse',
+    { broken: 86, warn: 2, goodput: [11.3, 12.5] },
+    [
+      // Clears; Goodput 74.1 to 76.8/s over the run (77 to 80/s once Demand has risen).
+      ['shorter queue', { broken: 0, warn: 0, goodput: [74.0, 76.9] }],
+      // Clears, and turns away what is over 60/s: Goodput 58.7 to 60.8/s.
+      ['lower limit', { broken: 0, warn: 0, goodput: [58.6, 60.9] }],
+      // Cancelling abandoned work is not modelled, so it stays text.
+      null,
+    ],
+  ],
+  [
+    'noisy neighbor, one greedy Client behind a global token bucket of 40/s',
+    greedyFixture,
+    0,
+    'noisy-neighbor',
+    { broken: 106, warn: 0, goodput: [39.9, 40.1] },
+    // Clears; Goodput 51.1 to 53.2/s, as the others are no longer turned away.
+    [
+      ['limit per Client', { broken: 0, warn: 0, goodput: [51.0, 53.3] }],
+      // Weighted fair queuing is not modelled.
+      null,
+    ],
+  ],
 ]
 
 const within = (value: number, [low, high]: [number, number]) =>
@@ -149,8 +227,10 @@ const within = (value: number, [low, high]: [number, number]) =>
 describe.each(cases)('the fixes for %s', (_, scenario, index, mode, asIs, patched) => {
   const fixes = fixesOf(scenario, index, mode)
 
-  it('each have a patch, listed in the order of the rule', () => {
-    expect(fixes.map((fix) => fix.patch?.name)).toEqual(patched.map(([name]) => name))
+  it('have patches where measured to help, in the order of the rule', () => {
+    expect(fixes.map((fix) => fix.patch?.name ?? null)).toEqual(
+      patched.map((entry) => entry?.[0] ?? null),
+    )
   })
 
   it('fire as expected before any fix', () => {
@@ -160,18 +240,17 @@ describe.each(cases)('the fixes for %s', (_, scenario, index, mode, asIs, patche
     within(seen.goodput, asIs.goodput)
   })
 
-  it.each(patched.map(([name, expected], i) => [name, expected, i] as const))(
-    '"%s" clears or softens it, with the Goodput its text implies',
-    (_name, expected, i) => {
-      const fix = fixes[i]
-      if (fix === undefined) throw new Error('Missing fix')
-      const fixed = applyFix(scenario, index, fix)
-      const seen = measure(fixed, index + 1, mode)
-      expect(seen.broken).toBeLessThanOrEqual(expected.broken)
-      expect(seen.warn).toBeLessThanOrEqual(expected.warn)
-      within(seen.goodput, expected.goodput)
-    },
-  )
+  it.each(
+    patched.flatMap((entry, i) => (entry === null ? [] : [[entry[0], entry[1], i] as const])),
+  )('"%s" clears or softens it, with the Goodput its text implies', (_name, expected, i) => {
+    const fix = fixes[i]
+    if (fix === undefined) throw new Error('Missing fix')
+    const fixed = applyFix(scenario, index, fix)
+    const seen = measure(fixed, index + 1, mode)
+    expect(seen.broken).toBeLessThanOrEqual(expected.broken)
+    expect(seen.warn).toBeLessThanOrEqual(expected.warn)
+    within(seen.goodput, expected.goodput)
+  })
 })
 
 describe('the lower-limit fix for saturation', () => {

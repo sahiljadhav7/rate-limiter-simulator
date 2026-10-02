@@ -87,8 +87,8 @@ const stormAndTight = {
 }
 
 /**
- * Every Scenario at its default Demand and at 3x, as is and with "Retry at once" and "Back off
- * with jitter" on every Variant (seed as shipped, 120 s; .scratch/diagnosis/table-probe.ts).
+ * Every Scenario at its default Demand and at 3x, as is and with each Retry Policy on every
+ * Variant (seed as shipped, 120 s; .scratch/diagnosis/table-probe.ts).
  * Saturation fires in none of them: bursty traffic keeps the Backend under 26% busy over 5 s.
  * So limit too loose, which needs a saturated Backend, fires in none of them either, nor goodput
  * collapse, which needs it at least 80% busy. Noisy neighbor fires in none: Edge burst's bursts
@@ -97,19 +97,29 @@ const stormAndTight = {
 const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 10, undefined, [none, none]],
   ['Backend overload', backendOverloadScenario, 10, 'immediate', [none, none]],
+  ['Backend overload', backendOverloadScenario, 10, 'backoff', [none, none]],
   ['Backend overload', backendOverloadScenario, 10, 'backoff-jitter', [none, none]],
+  ['Backend overload', backendOverloadScenario, 10, 'retry-after', [none, none]],
   ['Backend overload', backendOverloadScenario, 30, undefined, [overflow, none]],
   // Retries at once: a storm in both, the Root Cause; the token bucket's Backend copes.
   ['Backend overload', backendOverloadScenario, 30, 'immediate', [stormAndOverflow, storm]],
+  ['Backend overload', backendOverloadScenario, 30, 'backoff', [overflow, none]],
   ['Backend overload', backendOverloadScenario, 30, 'backoff-jitter', [overflow, none]],
+  ['Backend overload', backendOverloadScenario, 30, 'retry-after', [overflow, none]],
   // Fixed window first: a boundary burst at every Edge Burst, the Root Cause. The sliding
   // window counter has no window edge reset, and the Backend copes with what it allows.
   ['Edge burst', edgeBurstScenario, 4, undefined, [burst, none]],
   ['Edge burst', edgeBurstScenario, 4, 'immediate', [stormAndBurst, storm]],
+  ['Edge burst', edgeBurstScenario, 4, 'backoff', [burst, none]],
   ['Edge burst', edgeBurstScenario, 4, 'backoff-jitter', [burst, none]],
+  ['Edge burst', edgeBurstScenario, 4, 'retry-after', [burst, none]],
   ['Edge burst', edgeBurstScenario, 12, undefined, [burstAndTight, tight]],
   ['Edge burst', edgeBurstScenario, 12, 'immediate', [stormBurstAndTight, stormAndTight]],
+  ['Edge burst', edgeBurstScenario, 12, 'backoff', [burstAndTight, tight]],
   ['Edge burst', edgeBurstScenario, 12, 'backoff-jitter', [burstAndTight, tight]],
+  // Retries wait for the next window edge and fill the fixed window at its start, so nothing is
+  // let through just before an edge: no boundary burst, and limit too tight is the Root Cause.
+  ['Edge burst', edgeBurstScenario, 12, 'retry-after', [tight, tight]],
 ]
 
 describe('Scenario Findings table', () => {
