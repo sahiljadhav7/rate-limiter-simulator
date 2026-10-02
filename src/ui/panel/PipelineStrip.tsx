@@ -103,47 +103,51 @@ export function PipelineStrip(props: {
   readonly backend: NodeState
 }) {
   const { stats, backend } = props
+  // The wrapper is the container the strip's narrow layout queries (panel.css). The panel itself
+  // cannot be: a container has layout containment, and that stops it being a subgrid.
   return (
-    <ol
-      className="pipeline"
-      aria-label="Pipeline: rates and Busy over the last 5 seconds, most waiting in the last second"
-    >
-      <Node
-        kind="client"
-        name="Clients"
-        metrics={[
-          { value: formatNumber(stats.demand), unit: '/s', label: 'Demand' },
-          { value: formatNumber(stats.offeredLoad), unit: '/s', label: 'Offered' },
-        ]}
-      />
-      <Edge rate={stats.offeredLoad} label="Offered Load to the Limiter" />
-      <Node
-        kind="limiter"
-        name="Limiter"
-        metrics={[
-          { value: formatNumber(stats.allowed), unit: '/s', label: 'Allowed' },
-          { value: formatShare(stats.rejectedShare), unit: '%', label: 'Rejected' },
-        ]}
-        meter={{ value: stats.limiterMeter, label: 'Allowed against the limit, percent' }}
-      />
-      <Edge rate={stats.allowed} label="Allowed to the Backend" severity={backend.severity} />
-      <Node
-        kind="backend"
-        name="Backend"
-        metrics={[
-          { value: formatShare(stats.busy), unit: '%', label: 'Busy' },
-          {
-            value: formatNumber(stats.p99),
-            unit: 'ms',
-            label: <abbr title="99th percentile">p99</abbr>,
-          },
-          { value: formatNumber(stats.waiting), unit: '', label: 'Most waiting' },
-          // The share the Finding measured, shown as it shows it, only while there is one.
-          ...(backend.lost === null ? [] : [{ value: backend.lost, unit: '', label: 'Lost' }]),
-        ]}
-        meter={{ value: stats.backendMeter, label: 'Backend slots busy, percent' }}
-        state={backend}
-      />
-    </ol>
+    <div className="pipeline-box">
+      <ol
+        className="pipeline"
+        aria-label="Pipeline: rates and Busy over the last 5 seconds, most waiting in the last second"
+      >
+        <Node
+          kind="client"
+          name="Clients"
+          metrics={[
+            { value: formatNumber(stats.demand), unit: '/s', label: 'Demand' },
+            { value: formatNumber(stats.offeredLoad), unit: '/s', label: 'Offered' },
+          ]}
+        />
+        <Edge rate={stats.offeredLoad} label="Offered Load to the Limiter" />
+        <Node
+          kind="limiter"
+          name="Limiter"
+          metrics={[
+            { value: formatNumber(stats.allowed), unit: '/s', label: 'Allowed' },
+            { value: formatShare(stats.rejectedShare), unit: '%', label: 'Rejected' },
+          ]}
+          meter={{ value: stats.limiterMeter, label: 'Allowed against the limit, percent' }}
+        />
+        <Edge rate={stats.allowed} label="Allowed to the Backend" severity={backend.severity} />
+        <Node
+          kind="backend"
+          name="Backend"
+          metrics={[
+            { value: formatShare(stats.busy), unit: '%', label: 'Busy' },
+            {
+              value: formatNumber(stats.p99),
+              unit: 'ms',
+              label: <abbr title="99th percentile">p99</abbr>,
+            },
+            { value: formatNumber(stats.waiting), unit: '', label: 'Most waiting' },
+            // The share the Finding measured, shown as it shows it, only while there is one.
+            ...(backend.lost === null ? [] : [{ value: backend.lost, unit: '', label: 'Lost' }]),
+          ]}
+          meter={{ value: stats.backendMeter, label: 'Backend slots busy, percent' }}
+          state={backend}
+        />
+      </ol>
+    </div>
   )
 }

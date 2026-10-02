@@ -9,8 +9,6 @@
   grid-template-columns: minmax(0, 1fr);
   row-gap: var(--sp-4);
   align-content: start;
-  /* The pipeline strip reads the panel's width, not the screen's (see "Narrow panels"). */
-  container: panel / inline-size;
 }
 
 @media (min-width: 1024px) {
@@ -103,6 +101,11 @@
   --k-line: var(--kind-backend-line);
   --k-stroke: var(--kind-backend-stroke);
   --k-ink: var(--kind-backend-ink);
+}
+
+/* The strip reads its own width, not the screen's (see "Narrow panels"). */
+.pipeline-box {
+  container: pipeline / inline-size;
 }
 
 .pipeline {
@@ -224,7 +227,7 @@
  * their nodes. Each node takes the full width with its metrics in a row, and each edge becomes
  * a short arrow pointing down with its rate beside it.
  */
-@container panel (max-width: 359px) {
+@container pipeline (max-width: 359px) {
   .pipeline {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -357,7 +360,7 @@
 }
 
 /* In a narrow panel the edge points down: the line is its left border, the arrow its top. */
-@container panel (max-width: 359px) {
+@container pipeline (max-width: 359px) {
   .edge[data-state='broken'] .edge-line {
     border-left-color: var(--danger);
   }
