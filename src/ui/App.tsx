@@ -9,6 +9,9 @@ import { SCENARIOS } from './scenarios/index.ts'
 import { ScenarioNotes } from './notes/ScenarioNotes.tsx'
 import { ShareButton } from './share/ShareButton.tsx'
 import { parseShareState, shareUrl } from './share/url-state.ts'
+import { TabBar } from './tabs/TabBar.tsx'
+import { shortNames, tabBadge } from './tabs/tabs.ts'
+import { PHONE_QUERY, useMediaQuery } from './use-media-query.ts'
 import { useRunner, type RunnerControls } from './use-runner.ts'
 import './app.css'
 
@@ -44,7 +47,15 @@ function ScenarioRun(props: {
 }) {
   const { initial, onPick } = props
   const pickerId = useId()
+  const panelsId = useId()
+  const phone = useMediaQuery(PHONE_QUERY)
+  /**
+   * The phone's open tab: a Variant's index, or the Variant count for Compare. The first Variant
+   * opens with each Scenario (this component is keyed by it); it is not part of the link.
+   */
+  const [openTab, setOpenTab] = useState(0)
   const [scenario, setScenario] = useState<Scenario>(initial)
+  const names = useMemo(() => shortNames(scenario.variants), [scenario.variants])
   const { view, controls: runnerControls, slower } = useRunner(initial)
   /**
    * The Demand the address bar holds: where the slider was last released, or where Reset put
@@ -141,10 +152,25 @@ function ScenarioRun(props: {
               nowMs={view.simMs}
               index={i}
               onRetryMode={onRetryMode}
+              panelId={`${panelsId}-${i}`}
+              phone={phone}
+              tabOpen={openTab === i}
             />
           ) : null
         })}
       </main>
+      <TabBar
+        tabs={scenario.variants.map((config, i) => ({
+          name: names[i] ?? config.label,
+          label: config.label,
+          algo: config.limiter.algo,
+          panelId: `${panelsId}-${i}`,
+          badge: tabBadge(view.variants[i]?.findings ?? []),
+        }))}
+        compareId={`${panelsId}-compare`}
+        open={openTab}
+        onOpen={setOpenTab}
+      />
       <ScenarioNotes scenario={scenario} />
       <footer className="ledger">
         <span data-testid="ledger-line">

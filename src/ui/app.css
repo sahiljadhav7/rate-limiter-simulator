@@ -65,6 +65,13 @@
   padding: var(--sp-3);
 }
 
+/* On a phone the page ends 56px higher, so the fixed tab bar covers nothing (tabs.css). */
+@media (max-width: 639px) {
+  .page {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + var(--sp-3));
+  }
+}
+
 .top-bar {
   display: flex;
   flex-wrap: wrap;

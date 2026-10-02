@@ -52,6 +52,12 @@ export interface VariantPanelProps {
   readonly index: number
   /** Switches Variant `index` to `mode`, which restarts the run. */
   readonly onRetryMode: (index: number, mode: RetryMode) => void
+  /** The panel's id, which the phone's tab names in `aria-controls`. */
+  readonly panelId: string
+  /** Below 640px: the panel is a tab panel, shown only while its tab is open. */
+  readonly phone: boolean
+  /** Whether its tab is open on a phone; wider screens show every panel whatever this says. */
+  readonly tabOpen: boolean
 }
 
 /**
@@ -60,8 +66,8 @@ export interface VariantPanelProps {
  * a diagnosis card for each active Finding.
  */
 export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps) {
-  const { variant, config, backend, clients, nowMs, index, onRetryMode } = props
-  const panelId = useId()
+  const { variant, config, backend, clients, nowMs, index, onRetryMode, panelId, phone, tabOpen } =
+    props
   const headingId = `${panelId}-heading`
   const retryId = useId()
   const stats = panelStats(variant.snapshots, config.limiter, clients)
@@ -73,6 +79,8 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
       // Focusable from script: an ended Finding's marker pill moves here.
       tabIndex={-1}
       aria-labelledby={headingId}
+      role={phone ? 'tabpanel' : undefined}
+      data-tab-open={tabOpen}
       style={{ '--panel-rows': PANEL_ROWS } as CSSProperties}
       data-testid="variant"
     >
