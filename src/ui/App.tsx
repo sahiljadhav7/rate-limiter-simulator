@@ -14,7 +14,7 @@ import { TabBar } from './tabs/TabBar.tsx'
 import { headlineStats, shortNames, tabBadge } from './tabs/tabs.ts'
 import { panelStats } from './panel/stats.ts'
 import { PHONE_QUERY, useMediaQuery } from './use-media-query.ts'
-import { RunClockContext } from './run-clock.ts'
+import { RunPausedContext } from './run-clock.ts'
 import { useRunner, type RunnerControls } from './use-runner.ts'
 import './app.css'
 
@@ -60,10 +60,6 @@ function ScenarioRun(props: {
   const [scenario, setScenario] = useState<Scenario>(initial)
   const names = useMemo(() => shortNames(scenario.variants), [scenario.variants])
   const { view, controls: runnerControls, slower, hiddenNotice } = useRunner(initial)
-  const runClock = useMemo(
-    () => ({ speed: view.speed, paused: view.paused }),
-    [view.speed, view.paused],
-  )
   // Each Variant's p99 as the stat row computes it, on a phone only: wider screens show no
   // headline. The controls compare it by value, so they re-render when a number changes.
   const headline = phone
@@ -162,7 +158,7 @@ function ScenarioRun(props: {
         />
         <ShareButton url={link} />
       </header>
-      <RunClockContext.Provider value={runClock}>
+      <RunPausedContext.Provider value={view.paused}>
         <main className="panels" style={{ '--columns': scenario.variants.length } as CSSProperties}>
           {scenario.variants.map((config, i) => {
             // The runner keeps the Scenario's Variant order, so the view lines up with the config.
@@ -195,7 +191,7 @@ function ScenarioRun(props: {
             />
           ) : null}
         </main>
-      </RunClockContext.Provider>
+      </RunPausedContext.Provider>
       <TabBar
         tabs={scenario.variants.map((config, i) => ({
           name: names[i] ?? config.label,

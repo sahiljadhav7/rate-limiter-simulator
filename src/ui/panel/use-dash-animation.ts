@@ -1,10 +1,10 @@
 import { useContext, useEffect, useRef } from 'react'
-import { RunClockContext } from '../run-clock.ts'
+import { RunPausedContext } from '../run-clock.ts'
 import { useMediaQuery } from '../use-media-query.ts'
-import { DASH_PERIOD_PX, dashPxPerWallSecond } from './edge-dashes.ts'
+import { DASH_PERIOD_PX, dashPxPerSecond } from './edge-dashes.ts'
 
 /**
- * Every edge strip that is moving, with its speed in px per wall second and how far it has slid
+ * Every edge strip that is moving, with its speed in px a second and how far it has slid
  * within one dash period. One animation-frame loop moves them all; it runs only while one moves.
  */
 const moving = new Map<HTMLElement, { pxPerSecond: number; offsetPx: number }>()
@@ -36,7 +36,7 @@ function setSpeed(strip: HTMLElement, pxPerSecond: number): void {
 
 /**
  * Moves an edge's dashes (DESIGN.md "Edge", "Motion"): its strip slides by its `transform`, at a
- * speed from the edge's rate and the run's speed, written straight to the element each frame, so
+ * speed from the edge's rate, written straight to the element each frame, so
  * React renders only when the rate changes, about once a second. Still while paused and under
  * `prefers-reduced-motion`, and the loop stops when nothing moves.
  *
@@ -47,13 +47,13 @@ function setSpeed(strip: HTMLElement, pxPerSecond: number): void {
  */
 export function useDashAnimation(ratePerSecond: number | null) {
   const strip = useRef<HTMLSpanElement>(null)
-  const { speed, paused } = useContext(RunClockContext)
+  const paused = useContext(RunPausedContext)
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)')
   useEffect(() => {
     const el = strip.current
     if (el === null) return
-    setSpeed(el, reduced ? 0 : dashPxPerWallSecond(ratePerSecond, speed, paused))
-  }, [ratePerSecond, speed, paused, reduced])
+    setSpeed(el, reduced ? 0 : dashPxPerSecond(ratePerSecond, paused))
+  }, [ratePerSecond, paused, reduced])
   useEffect(() => {
     const el = strip.current
     return () => {
