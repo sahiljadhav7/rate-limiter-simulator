@@ -10,6 +10,7 @@ import { baselineP99Ms } from './baseline.ts'
 import type { AllowedSubBuckets } from './engine.ts'
 import { bucketAt } from './buckets.ts'
 import type { FixedWindowSpec, LimiterSpec } from './limiter.ts'
+import type { RetryPolicy } from './retry-policy.ts'
 import { QUICK_RETRY_MS, SNAPSHOT_MS, WARM_UP_MS, type Snapshot } from './metrics.ts'
 import { rollingWindowCounts } from './window-counts.ts'
 
@@ -43,9 +44,25 @@ export const SYMPTOM_ORDER: readonly FailureMode[] = ['saturation', 'queue-overf
 /** How bad a Finding is: `warn` is amber, `broken` is red. */
 export type Severity = 'warn' | 'broken'
 
-/** A suggested configuration change. `patch` (Apply fix, RS-27) comes later. */
+/**
+ * The configuration change a Fix makes, applied as a new Variant beside the one it fixes
+ * (Apply fix, RS-27). Only a fix measured to help gets one; the rest stay text.
+ */
+export interface FixPatch {
+  /** Short and lower case, added to the original's label: "Sliding window counter, more slots". */
+  readonly name: string
+  /** A different Limiter in place of the Variant's. */
+  readonly limiter?: LimiterSpec
+  /** Changes to the Variant's Retry Policy; the rest of it is kept. */
+  readonly retry?: Partial<RetryPolicy>
+  /** Changes to the Backend, for the fixed Variant alone. */
+  readonly backend?: Partial<BackendSpec>
+}
+
+/** A suggested configuration change, with a patch when it can be applied. */
 export interface Fix {
   readonly text: string
+  readonly patch?: FixPatch
 }
 
 /** One detected occurrence of a Failure Mode in a Variant, with the evidence that fired it. */

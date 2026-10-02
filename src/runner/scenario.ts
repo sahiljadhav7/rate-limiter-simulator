@@ -35,6 +35,8 @@ export interface VariantConfig {
    * Scenario's. Read it through `variantBackend`.
    */
   readonly backend?: Partial<BackendSpec>
+  /** Set on a Variant made by Apply fix: the label of the Variant it fixes. */
+  readonly fixOf?: string
 }
 
 /**

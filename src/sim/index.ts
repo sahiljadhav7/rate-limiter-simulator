@@ -69,6 +69,7 @@ export {
   type FailureMode,
   type Finding,
   type Fix,
+  type FixPatch,
   type PastFinding,
   type Severity,
 } from './diagnosis.ts'
