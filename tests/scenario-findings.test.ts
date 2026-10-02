@@ -3,6 +3,7 @@ import { createRunner } from '../src/runner/runner.ts'
 import type { Scenario } from '../src/runner/scenario.ts'
 import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
 import { goodputCollapseScenario } from '../src/ui/scenarios/goodput-collapse.ts'
+import { limitSettingScenario } from '../src/ui/scenarios/limit-setting.ts'
 import { noisyNeighborScenario } from '../src/ui/scenarios/noisy-neighbor.ts'
 import { retryStormScenario } from '../src/ui/scenarios/retry-storm.ts'
 import { withRetryMode, type RetryMode } from '../src/ui/controls/retry-options.ts'
@@ -72,6 +73,20 @@ const stormAndLoose = {
   modes: { ...loose.modes, 'retry-storm': 'broken' },
   roots: ['retry-storm'],
 }
+const tightWarn = { modes: { 'limit-too-tight': 'warn' }, roots: ['limit-too-tight'] }
+const tight = { modes: { 'limit-too-tight': 'broken' }, roots: ['limit-too-tight'] }
+const stormWarnAndTight = {
+  modes: { 'retry-storm': 'warn', 'limit-too-tight': 'broken' },
+  roots: ['retry-storm'],
+}
+const looseAndStormWarn = {
+  modes: { ...loose.modes, 'retry-storm': 'warn' },
+  roots: ['limit-too-loose'],
+}
+const stormAndTight = {
+  modes: { 'retry-storm': 'broken', 'limit-too-tight': 'broken' },
+  roots: ['retry-storm'],
+}
 const stormAndOverflow = {
   modes: { 'retry-storm': 'broken', 'queue-overflow': 'broken' },
   roots: ['retry-storm'],
@@ -93,7 +108,8 @@ const stormAndOverflow = {
  * queue there, so only a retry storm fires, and only where retries come at once. Goodput collapse
  * opened at 120/s (.scratch/new-scenarios/collapse-rows.ts) has no good spell for goodput collapse
  * to fall from, so the table shows limit too loose and what follows it; its own lesson, a raise
- * while it runs, is the test below the table.
+ * while it runs, is the test below the table. The limit Scenario (.scratch/new-scenarios/limit-rows.ts)
+ * has its lesson at default: the limit of 20 is too tight from the start.
  */
 const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 10, undefined, [none, none]],
@@ -148,6 +164,19 @@ const TABLE: readonly Row[] = [
   // The token bucket's Retry-After is the wait for its next token, at most 8.3 ms at 120/s,
   // inside the 10 ms that counts as at once; at 60/s it is up to 16.7 ms.
   ['Goodput collapse', goodputCollapseScenario, 120, 'retry-after', [stormAndLoose, none]],
+  ['Limit setting', limitSettingScenario, 30, undefined, [tightWarn, none]],
+  // Retries come back to the limit of 20 and are rejected again: more rejected, so broken.
+  ['Limit setting', limitSettingScenario, 30, 'immediate', [stormWarnAndTight, none]],
+  ['Limit setting', limitSettingScenario, 30, 'backoff', [tight, none]],
+  ['Limit setting', limitSettingScenario, 30, 'backoff-jitter', [tight, none]],
+  ['Limit setting', limitSettingScenario, 30, 'retry-after', [tight, none]],
+  ['Limit setting', limitSettingScenario, 90, undefined, [tight, loose]],
+  // Behind the limit of 200 only shed Attempts come back, and limit too loose stays the Root
+  // Cause over a retry storm at Warning.
+  ['Limit setting', limitSettingScenario, 90, 'immediate', [stormAndTight, looseAndStormWarn]],
+  ['Limit setting', limitSettingScenario, 90, 'backoff', [tight, loose]],
+  ['Limit setting', limitSettingScenario, 90, 'backoff-jitter', [tight, loose]],
+  ['Limit setting', limitSettingScenario, 90, 'retry-after', [tight, loose]],
 ]
 
 describe('Scenario Findings table', () => {
@@ -272,6 +301,23 @@ describe('Scenario Findings table', () => {
       expect([...collapseRoles]).toEqual(['contributing'])
       expect(limit60).toBe(0)
       expect(roots[1]?.size).toBe(0)
+    },
+  )
+
+  // Seeds 1 to 8 (.scratch/new-scenarios/limit-scenario.ts): at 30/s the limit of 20 has limit too
+  // tight Warning for 93 to 106 s of 106; at 90 and 120/s both are Broken, each with its own Root
+  // Cause. This runs seed 1.
+  it.each([
+    [30, 'warn', 'none'],
+    [90, 'broken', 'broken'],
+    [120, 'broken', 'broken'],
+  ] as const)(
+    'Limit setting at %s/s: the limit of 20 is too tight (worst %s), the limit of 200 too loose (worst %s)',
+    (demandRps, tightWorst, looseWorst) => {
+      const [limit20, limit200] = worstFindings(limitSettingScenario, demandRps)
+      expect(limit20).toMatchObject({ worst: tightWorst, rootCauses: ['limit-too-tight'] })
+      expect(limit200?.worst).toBe(looseWorst)
+      if (looseWorst !== 'none') expect(limit200?.rootCauses).toEqual(['limit-too-loose'])
     },
   )
 })
