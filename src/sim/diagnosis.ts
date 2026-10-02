@@ -653,11 +653,17 @@ function createHold<T>(clearWindows: number) {
  */
 export function retryStormRule(): Rule {
   const fixes: readonly Fix[] = [
-    // Ranked by Goodput for the sliding window counter in Backend overload at 30/s with "Retry
-    // at once", seeds 1 to 8 (.scratch/apply-fix/patch-probe.ts), against broken 110 to 111 s
-    // of 111 and 10.0 to 10.6/s as is: back off with jitter, never a storm and 12.8 to 13.4/s;
-    // wait for Retry-After, never a storm and 10.9 to 11.5/s; one Attempt fewer, warn throughout
-    // instead of broken and 10.5 to 10.9/s. The same order holds for the token bucket there.
+    // Ranked by Goodput from "Retry at once" (3 Attempts, 500 ms), seeds 1 to 8, 15 to 120 s
+    // (.scratch/new-scenarios/storm-fixes.ts). Backend overload's sliding window counter at 30/s,
+    // broken 106 s of 106 and 9.9 to 10.6/s as is: back off, never a storm and 14.5 to 15.1/s;
+    // back off with jitter, never and 12.8 to 13.4/s; wait for Retry-After, never and 10.9 to
+    // 11.4/s; one Attempt fewer, warn throughout instead of broken and 10.4 to 10.9/s. The same
+    // order holds for the token bucket at 30 and 40/s (at 40: 15.6 to 15.8/s as is, then 19.7 to
+    // 19.8, 18.0 to 18.5, 16.0 to 16.2 and 15.6 to 15.8). Jitter waits a random share of the
+    // backoff, so less on average, and more of its Attempts come back while the burst is on: at
+    // 40/s, 78,004 in the burst seconds against 69,213 backing off, and 2,117 allowed in the
+    // second after against 3,371 (.scratch/new-scenarios/storm-phase.ts plain).
+    { text: 'Try backing off, so each new Attempt waits longer than the one before' },
     { text: 'Try backing off with jitter, so each new Attempt waits a random, growing time' },
     {
       text: 'Try waiting for Retry-After, so new Attempts come when the Limiter says there is room',

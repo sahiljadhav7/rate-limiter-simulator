@@ -100,6 +100,7 @@ describe('the retry storm rule', () => {
         'failure that caused them, too soon for anything to have changed.',
     )
     expect(finding?.fixes.map((fix) => fix.text)).toEqual([
+      'Try backing off, so each new Attempt waits longer than the one before',
       'Try backing off with jitter, so each new Attempt waits a random, growing time',
       'Try waiting for Retry-After, so new Attempts come when the Limiter says there is room',
       'Try fewer Attempts per Request, so each failure adds less traffic',
