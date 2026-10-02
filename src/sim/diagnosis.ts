@@ -574,9 +574,10 @@ export function saturationRule(backend: BackendSpec): Rule {
   /**
    * Whether `busy` and `ratio` reach `level`, or stay within its margins once `held`. With no
    * p99 (nothing finished in time to be measured), busy alone decides: a Backend so stalled
-   * that every caller gave up is not healthy. It can stall before a raised p99 is ever measured:
-   * a limit of 120/s in front of 80/s, Demand raised from 40 to 120/s, peaks at 1.9x the
-   * baseline on seed 5 before nothing finishes (.scratch/new-scenarios/collapse-timeline.ts 5).
+   * that every Client gave up is not healthy. It can stall before a raised p99 is ever measured:
+   * behind a limit of 120/s in front of 80/s, Demand raised from 40 to 120/s, seed 5's p99 peaks
+   * at 431 ms against a 230 ms baseline, under the 2x warn needs, before nothing finishes
+   * (.scratch/new-scenarios/collapse-timeline.ts 5).
    */
   function reaches(
     level: { readonly busy: number; readonly ratio: number },
