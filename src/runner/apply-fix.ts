@@ -6,6 +6,11 @@
 import type { Fix, RetryPolicy } from '../sim/index.ts'
 import { checkScenario, type Scenario, type VariantConfig } from './scenario.ts'
 
+/** The label of Variant `label` fixed by a patch named `name`: "Sliding window counter, more slots". */
+export function fixedLabel(label: string, name: string): string {
+  return `${label}, ${name}`
+}
+
 /**
  * `scenario` with Variant `index` fixed by `fix`: the fixed Variant is inserted after it, labelled
  * "<original>, <fix name>" with `fixOf` naming the original, and any fix applied before is
@@ -26,7 +31,7 @@ export function applyFix(scenario: Scenario, index: number, fix: Fix): Scenario 
     throw new RangeError(`"${fix.text}" has no patch to apply`)
   }
   const fixed: VariantConfig = {
-    label: `${original.label}, ${patch.name}`,
+    label: fixedLabel(original.label, patch.name),
     fixOf: original.label,
     limiter: patch.limiter ?? original.limiter,
     // Only a whole policy can be checked, so a patch that leaves out what its mode needs (such as

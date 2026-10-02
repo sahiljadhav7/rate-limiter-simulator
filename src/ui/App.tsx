@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useId, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { applyFix, removeFix } from '../runner/apply-fix.ts'
 import { variantBackend, type Scenario } from '../runner/scenario.ts'
+import type { Fix } from '../sim/index.ts'
 import { demandAt } from './controls/demand.ts'
 import { withRetryMode, withVariantRetry, type RetryMode } from './controls/retry-options.ts'
 import { TopBarControls } from './controls/TopBarControls.tsx'
@@ -90,8 +92,9 @@ function ScenarioRun(props: {
     }),
     [runnerControls, scenario],
   )
+  // The link sets up the run as authored, without an applied fix (.scratch/apply-fix/ decision 6).
   const link = useMemo(
-    () => shareUrl(window.location.href, scenario, linkDemand),
+    () => shareUrl(window.location.href, removeFix(scenario), linkDemand),
     [scenario, linkDemand],
   )
   // The address bar follows the setup, so a reload or a copied address reopens it (decision 6).
@@ -111,6 +114,44 @@ function ScenarioRun(props: {
     },
     [runnerControls, linkDemand],
   )
+  /**
+   * The label of the panel to focus once the next render has drawn it: after Apply fix the new
+   * panel, after Remove fix the original, so a keyboard user lands on the result.
+   */
+  const focusLabel = useRef<string | null>(null)
+  useEffect(() => {
+    const label = focusLabel.current
+    if (label === null) return
+    focusLabel.current = null
+    const i = scenario.variants.findIndex((v) => v.label === label)
+    document.getElementById(`${panelsId}-${i}`)?.focus()
+  }, [scenario, panelsId])
+  /** Restarts on `next` and shows the Variant labelled `label`: focused, and its tab open. */
+  const restartTo = useCallback(
+    (next: Scenario, label: string) => {
+      restartWith(next)
+      setOpenTab(
+        Math.max(
+          0,
+          next.variants.findIndex((v) => v.label === label),
+        ),
+      )
+      focusLabel.current = label
+    },
+    [restartWith],
+  )
+  const onApplyFix = useCallback(
+    (index: number, fix: Fix) => {
+      const next = applyFix(scenario, index, fix)
+      const fixed = next.variants.find((v) => v.fixOf !== undefined)
+      restartTo(next, fixed?.label ?? '')
+    },
+    [restartTo, scenario],
+  )
+  const onRemoveFix = useCallback(() => {
+    const original = scenario.variants.find((v) => v.fixOf !== undefined)?.fixOf
+    restartTo(removeFix(scenario), original ?? '')
+  }, [restartTo, scenario])
   const onSeed = useCallback(
     (seed: number) => restartWith({ ...scenario, seed }),
     [restartWith, scenario],
@@ -173,6 +214,9 @@ function ScenarioRun(props: {
                 nowMs={view.simMs}
                 index={i}
                 onRetryMode={onRetryMode}
+                variants={scenario.variants}
+                onApplyFix={onApplyFix}
+                onRemoveFix={onRemoveFix}
                 panelId={`${panelsId}-${i}`}
                 phone={phone}
                 tabOpen={openTab === i}

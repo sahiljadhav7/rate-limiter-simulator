@@ -134,7 +134,7 @@ The two blocks above are the source of truth for each theme's values. In `src/ui
 **Island.** The container for every floating group. `--surface`, `1px solid --border`, radius `--r-lg`, `--shadow-md`, padding `--sp-3`. Islands never touch each other; keep a `--sp-3` gap.
 
 **Button.** Height 36px, padding `0 --sp-3`, radius `--r-btn`, `1px solid --border-strong`, `--surface`, weight `--fw-med`, `box-shadow: --shadow-sm, inset 0 1px 0 --bevel`. Hover darkens the border; press moves down 1px. Variants:
-- *Primary*: `--accent` fill, `--accent-fg` text, weight `--fw-num`, bevel `--bevel-on-accent`. At most one per view (Apply fix).
+- *Primary*: `--accent` fill, `--accent-fg` text, weight `--fw-num`, bevel `--bevel-on-accent`; hover `--accent-hover`, press `--accent-press`. At most one per panel: the Root Cause's first Apply fix not yet applied.
 - *Ghost*: no border or shadow until hover.
 - *Icon*: 32 to 36px square. Grouped buttons (play, step, reset) share borders and round only the outer corners.
 
@@ -163,7 +163,7 @@ The two blocks above are the source of truth for each theme's values. In `src/ui
 1. A pill (ROOT CAUSE or CONTRIBUTING), the Failure Mode label in `--fs-lg`, and the severity in words in label type (BROKEN in `--danger`, WARNING in `--warn`), so it is not shown by colour alone.
 2. An evidence table of mono values with labels.
 3. **Why**, in body text.
-4. **How to fix**, as a ranked list. Each Fix with a patch gets an **Apply fix** primary button.
+4. **How to fix**, as a ranked list. Each Fix with a patch gets an **Apply fix** button on a line of its own under its text: primary for the Root Cause's first one, an ordinary button for the rest. Its accessible name adds what it applies ("Apply fix: more slots"). Pressing it restarts the run from 0 at the current Demand with the fixed Variant right after its original, and moves focus to the new panel. A fix already running reads **Applied** and is disabled. A Variant that is itself a fix has no Apply buttons: one fix at a time, and another replaces it.
 
 Labels inside the card use `--text-dim`: `--text-faint` on `--warn-soft` is 4.36:1 in the dark theme, under AA. The cards sit in the panel's last row, Root Cause first; with no Finding the row is empty, with no box or placeholder. The one exception is before the diagnoser's first judgement (10 s: the warm-up, then one full window), when the row says "Diagnosis starts at 10 s, after the warm-up" in label size and weight, `--text-dim`, sentence case (upper case would turn the s of seconds into S), so the quiet before it does not read as healthy. A visually hidden polite live region names the Root Cause and what contributes, without the numbers, so a screen reader hears a change in the diagnosis once.
 
@@ -197,7 +197,7 @@ Labels inside the card use `--text-dim`: `--text-faint` on `--warn-soft` is 4.36
 ```
 
 - **Top bar**: three islands spaced `--sp-3` from the viewport edges. On the left, the name and a Scenario picker. In the middle, the Demand slider, the transport buttons (play/pause, step, reset) and the speed control. On the right, Share (copies the URL state) and a menu (theme, export JSON, about, the "what this models and leaves out" note).
-- **Variant panels**: two or three equal columns, each an island. Order inside a panel: a header (Variant label, plus pills for algorithm and key scope), the pipeline strip, the stat row, the charts, then the diagnosis slot. Panels line up vertically, so the same chart sits at the same height in every column and can be compared at a glance.
+- **Variant panels**: two or three equal columns, each an island. Order inside a panel: a header (Variant label, plus pills for algorithm and key scope; a Variant made by Apply fix adds a FIX APPLIED pill in `--accent-ink` on `--accent-soft` and a **Remove fix** button, which restarts without it and moves focus back to the original), the pipeline strip, the stat row, the charts, then the diagnosis slot. Panels line up vertically, so the same chart sits at the same height in every column and can be compared at a glance.
 - **Notes** sit on the paper below or between the panels, never inside an island.
 - **Ledger** at the end of the page, after the notes.
 

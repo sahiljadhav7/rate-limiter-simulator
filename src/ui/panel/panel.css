@@ -510,6 +510,18 @@
   padding-left: var(--sp-5);
 }
 
+/* Each Apply fix button on a line of its own under its fix, so the list keeps its numbers. */
+.fixes .fix-apply {
+  display: flex;
+  margin: var(--sp-1) 0 var(--sp-2);
+}
+
+/* A Variant made by Apply fix: accent-ink on accent-soft is 6.9:1 (light) and 8.7:1 (dark). */
+.panel-head .pill-fix {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
 /* Through the slot as well, or the entrance rule above outranks it and cards still slide. */
 @media (prefers-reduced-motion: reduce) {
   .diagnosis > .diagnosis-card {

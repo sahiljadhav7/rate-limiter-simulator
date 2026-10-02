@@ -55,6 +55,30 @@
   outline-offset: 2px;
 }
 
+/*
+ * Primary (DESIGN.md "Button"): at most one per panel, the Root Cause's Apply fix. Two classes,
+ * so it outranks the hover border above whatever order the sheets load in. accent-fg on accent
+ * is 6.2:1 (light) and 6.6:1 (dark); on accent-hover 7.6:1 and 8.0:1.
+ */
+.btn.btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 var(--bevel-on-accent);
+  color: var(--accent-fg);
+  font-weight: var(--fw-num);
+}
+
+.btn.btn-primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.btn.btn-primary:active:not(:disabled) {
+  background: var(--accent-press);
+}
+
 .btn-icon {
   width: 36px;
   padding: 0;
