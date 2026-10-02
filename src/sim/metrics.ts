@@ -77,10 +77,18 @@ export interface Snapshot {
   readonly e2eP50: number | null
   readonly e2eP95: number | null
   readonly e2eP99: number | null
-  /** Per Client seen so far: Attempts that reached the Limiter, and those allowed. */
-  readonly perClient: Readonly<
-    Record<ClientId, { readonly offeredLoad: number; readonly allowed: number }>
-  >
+  /**
+   * Per Client seen so far: its new Requests (Demand), its Attempts that reached the Limiter, and
+   * those allowed. Demand and Offered Load differ by its retries.
+   */
+  readonly perClient: Readonly<Record<ClientId, ClientCounts>>
+}
+
+/** One Client's counts for one second. */
+export interface ClientCounts {
+  readonly demand: number
+  readonly offeredLoad: number
+  readonly allowed: number
 }
 
 /** A Failure is how a failed Request's last Attempt failed. */
@@ -166,7 +174,7 @@ export function createMetricsCollector(subBucketMs: number) {
     update(counts)
     update(sinceStart)
   }
-  const perClient = new Map<ClientId, { offeredLoad: number; allowed: number }>()
+  const perClient = new Map<ClientId, { demand: number; offeredLoad: number; allowed: number }>()
   const attemptLatency = createLatencyWindow()
   const e2eLatency = createLatencyWindow()
   const subBuckets: number[] = []
@@ -176,18 +184,19 @@ export function createMetricsCollector(subBucketMs: number) {
   /** The most waiting so far this second; starts at the queue left over from the last one. */
   let peakQueueDepth = 0
 
-  function client(clientId: ClientId): { offeredLoad: number; allowed: number } {
+  function client(clientId: ClientId): { demand: number; offeredLoad: number; allowed: number } {
     let entry = perClient.get(clientId)
     if (entry === undefined) {
-      entry = { offeredLoad: 0, allowed: 0 }
+      entry = { demand: 0, offeredLoad: 0, allowed: 0 }
       perClient.set(clientId, entry)
     }
     return entry
   }
 
   return {
-    newRequest(): void {
+    newRequest(clientId: ClientId): void {
       add((c) => c.demand++)
+      client(clientId).demand++
     },
     offered(clientId: ClientId): void {
       add((c) => c.offeredLoad++)
@@ -266,6 +275,7 @@ export function createMetricsCollector(subBucketMs: number) {
       peakQueueDepth = backend.queueDepth
       counts = emptyCounts()
       for (const entry of perClient.values()) {
+        entry.demand = 0
         entry.offeredLoad = 0
         entry.allowed = 0
       }

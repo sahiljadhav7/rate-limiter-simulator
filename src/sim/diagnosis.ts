@@ -970,7 +970,9 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
       const clients = ranked.length
       const fairShare = limit / clients
       const topShare = topTotals.allowed / allowedAll
-      const steady = recent.every((s) => (s.perClient[top]?.offeredLoad ?? 0) > fairShare)
+      // Its own new Requests, not its retries: a Client whose failures come straight back sends
+      // more Attempts without asking for more (a retry storm says that).
+      const steady = recent.every((s) => (s.perClient[top]?.demand ?? 0) > fairShare)
       const othersOffered = ranked.reduce((t, [, c]) => t + c.offered, 0) - topTotals.offered
       const othersPerSecond = othersOffered / recent.length
       const othersFair = fairShare * (clients - 1)

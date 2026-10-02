@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createRunner } from '../src/runner/runner.ts'
 import type { Scenario } from '../src/runner/scenario.ts'
-import type { Finding } from '../src/sim/diagnosis.ts'
+import { createDiagnoser, noisyNeighborRule, type Finding } from '../src/sim/diagnosis.ts'
+import { snapshotAt } from './snapshots.ts'
 import type { KeyBy } from '../src/sim/limiter.ts'
 import { withRetryMode, type RetryMode } from '../src/ui/controls/retry-options.ts'
 import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
@@ -104,4 +105,37 @@ describe('the noisy neighbor rule', () => {
       }
     }
   })
+
+  // Retries are not greed: a Client whose own new Requests are under its fair share, but whose
+  // failed Attempts come straight back, sends more Attempts without asking for more.
+  it.each([
+    [10, 'quiet', null],
+    [20, 'fires', 'broken'],
+  ] as const)(
+    'judges what a Client asks for, not its retries: Demand %s/s against a fair share of 13.3/s %s',
+    (demand, _, expected) => {
+      const limiter = {
+        algo: 'token-bucket',
+        keyBy: 'global',
+        capacity: 10,
+        refillPerSec: 40,
+      } as const
+      const diagnoser = createDiagnoser(
+        { backend: { slots: 4, queueLimit: 20, meanMs: 50, cv: 0.5 }, limiter },
+        [noisyNeighborRule(limiter)],
+      )
+      // Client a: 30 Attempts and 30 allowed a second, whatever its own Demand. The others ask
+      // for 4 each, under their share, and half of theirs are rejected.
+      for (let t = 6; t <= 20; t++) {
+        const other = { demand: 4, offeredLoad: 4, allowed: 2 }
+        diagnoser.add(
+          snapshotAt(t * 1000, {
+            perClient: { a: { demand, offeredLoad: 30, allowed: 30 }, b: other, c: other },
+          }),
+          { bucketMs: 100, counts: [] },
+        )
+      }
+      expect(diagnoser.findings()[0]?.severity ?? null).toBe(expected)
+    },
+  )
 })

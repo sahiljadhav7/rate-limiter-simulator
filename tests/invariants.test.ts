@@ -185,6 +185,7 @@ function checkSnapshots(
     for (const [id, c] of Object.entries(s.perClient)) {
       counts[`${id} offered`] = c.offeredLoad
       counts[`${id} allowed`] = c.allowed
+      counts[`${id} demand`] = c.demand
     }
     for (const [name, value] of Object.entries(counts)) {
       if (!(Number.isSafeInteger(value) && value >= 0)) at(`${name} is ${value}`)
@@ -195,6 +196,8 @@ function checkSnapshots(
     if (clientOffered !== s.offeredLoad)
       at(`Clients offered ${clientOffered}, in all ${s.offeredLoad}`)
     if (clientAllowed !== s.allowed) at(`Clients allowed ${clientAllowed}, in all ${s.allowed}`)
+    const clientDemand = clients.reduce((n, c) => n + c.demand, 0)
+    if (clientDemand !== s.demand) at(`Clients' Demand ${clientDemand}, in all ${s.demand}`)
     // A Request's first Attempt starts the moment it arrives, so in the same second.
     if (s.retryAttempts !== s.offeredLoad - s.demand) {
       at(`retries ${s.retryAttempts}, but Offered Load ${s.offeredLoad} minus Demand ${s.demand}`)

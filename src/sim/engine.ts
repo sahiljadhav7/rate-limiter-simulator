@@ -189,7 +189,7 @@ export function createEngine(options: EngineOptions): Engine {
       clientId: arrival.clientId,
       arrivedAtMs: arrival.atMs,
     }
-    metrics.newRequest()
+    metrics.newRequest(request.clientId)
     openRequests.add(request)
     startAttempt(request, 1)
   }

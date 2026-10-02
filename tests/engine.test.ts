@@ -722,6 +722,7 @@ describe('createEngine', () => {
         const perClient = Object.values(snapshot.perClient)
         expect(perClient.reduce((total, x) => total + x.offeredLoad, 0)).toBe(snapshot.offeredLoad)
         expect(perClient.reduce((total, x) => total + x.allowed, 0)).toBe(snapshot.allowed)
+        expect(perClient.reduce((total, x) => total + x.demand, 0)).toBe(snapshot.demand)
       }
     })
 
@@ -837,7 +838,7 @@ describe('createEngine', () => {
           allowed: 9,
           goodput: 9,
           backendUtil: 0.18,
-          perClient: { a: { offeredLoad: 9, allowed: 9 } },
+          perClient: { a: { demand: 9, offeredLoad: 9, allowed: 9 } },
         },
         // [1000, 2000): arrivals at 1000 to 1900. 2500 is mid-second, so no third Snapshot.
         {
@@ -848,7 +849,7 @@ describe('createEngine', () => {
           allowed: 10,
           goodput: 10,
           backendUtil: 0.2,
-          perClient: { a: { offeredLoad: 10, allowed: 10 } },
+          perClient: { a: { demand: 10, offeredLoad: 10, allowed: 10 } },
         },
       ])
     })
