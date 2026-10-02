@@ -162,7 +162,7 @@ The two blocks above are the source of truth for each theme's values. In `src/ui
 3. **Why**, in body text.
 4. **How to fix**, as a ranked list. Each Fix with a patch gets an **Apply fix** primary button.
 
-Labels inside the card use `--text-dim`: `--text-faint` on `--warn-soft` is 4.36:1 in the dark theme, under AA. The cards sit in the panel's last row, Root Cause first; with no Finding the row is empty, with no box or placeholder. A visually hidden polite live region names the Root Cause and what contributes, without the numbers, so a screen reader hears a change in the diagnosis once.
+Labels inside the card use `--text-dim`: `--text-faint` on `--warn-soft` is 4.36:1 in the dark theme, under AA. The cards sit in the panel's last row, Root Cause first; with no Finding the row is empty, with no box or placeholder. The one exception is before the diagnoser's first judgement (10 s: the warm-up, then one full window), when the row says "Diagnosis starts at 10 s, after the warm-up" in label size and weight, `--text-dim`, sentence case (upper case would turn the s of seconds into S), so the quiet before it does not read as healthy. A visually hidden polite live region names the Root Cause and what contributes, without the numbers, so a screen reader hears a change in the diagnosis once.
 
 ## Layout
 

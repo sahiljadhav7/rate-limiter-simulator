@@ -52,17 +52,20 @@ export interface DiagnosisSlotProps {
   readonly findings: readonly Finding[]
   /** The panel's id, which each card's id starts with. */
   readonly panelId: string
+  /** Before the first judgement, the line saying when diagnosis starts; null after. */
+  readonly warmUpLine: string | null
 }
 
 /**
  * The panel's last row: a card per active Finding, Root Cause first, and nothing at all when
- * there are none. A polite live region names the diagnosis without its numbers, so a screen
+ * there are none, except during the warm-up, when a line says when diagnosis starts. A polite live region names the diagnosis without its numbers, so a screen
  * reader hears a new Root Cause once. It re-renders only when what it shows changes.
  */
 export const DiagnosisSlot = memo(
-  function DiagnosisSlot({ findings, panelId }: DiagnosisSlotProps) {
+  function DiagnosisSlot({ findings, panelId, warmUpLine }: DiagnosisSlotProps) {
     return (
       <div className="diagnosis">
+        {warmUpLine ? <p className="label diagnosis-warm-up">{warmUpLine}</p> : null}
         <p className="visually-hidden" aria-live="polite">
           {announcement(findings)}
         </p>
@@ -77,5 +80,7 @@ export const DiagnosisSlot = memo(
     )
   },
   (before, after) =>
-    before.panelId === after.panelId && sameFindings(before.findings, after.findings),
+    before.panelId === after.panelId &&
+    before.warmUpLine === after.warmUpLine &&
+    sameFindings(before.findings, after.findings),
 )

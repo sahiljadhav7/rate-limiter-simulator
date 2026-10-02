@@ -5,6 +5,7 @@ import type { BackendSpec, Severity } from '../../sim/index.ts'
 import { RETRY_MODES, type RetryMode } from '../controls/retry-options.ts'
 import { CHART_ROWS, VariantCharts } from '../VariantCharts.tsx'
 import { DiagnosisSlot } from './DiagnosisCard.tsx'
+import { diagnosisWarmUpLine } from './diagnosis-card.ts'
 import { ALGORITHM_NAMES, KEY_SCOPE_NAMES } from './limiter-names.ts'
 import { nodeState } from './node-state.ts'
 import { PipelineStrip } from './PipelineStrip.tsx'
@@ -151,7 +152,11 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
         nowMs={nowMs}
         panelId={panelId}
       />
-      <DiagnosisSlot findings={variant.findings} panelId={panelId} />
+      <DiagnosisSlot
+        findings={variant.findings}
+        panelId={panelId}
+        warmUpLine={diagnosisWarmUpLine(nowMs)}
+      />
     </section>
   )
 })

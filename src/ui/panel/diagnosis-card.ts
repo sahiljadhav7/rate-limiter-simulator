@@ -2,6 +2,7 @@
  * What the diagnosis card shows that can be worked out without React (spec decisions 11 and
  * 13): its words, when it needs to re-render, and what a screen reader hears.
  */
+import { FIRST_JUDGEMENT_MS } from '../../sim/index.ts'
 import type { FailureMode, Finding, PastFinding, Severity } from '../../sim/index.ts'
 
 /** The pill: shown in label type, which uppercases it. */
@@ -86,4 +87,15 @@ export function findingMarkers(
       targetId: findingAnchorId(panelId, f.id),
     })),
   ].sort((a, b) => a.t - b.t)
+}
+
+/**
+ * The diagnosis row's line during the warm-up (.scratch/polish/spec.md decision 16), or null from
+ * the first judgement on, when a healthy row is empty again. Without it, the empty row before the
+ * first judgement would read as "nothing wrong".
+ */
+export function diagnosisWarmUpLine(nowMs: number): string | null {
+  return nowMs < FIRST_JUDGEMENT_MS
+    ? `Diagnosis starts at ${FIRST_JUDGEMENT_MS / 1000} s, after the warm-up`
+    : null
 }

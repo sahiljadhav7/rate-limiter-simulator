@@ -60,6 +60,7 @@ export { rollingWindowCounts } from './window-counts.ts'
 export {
   createDiagnoser,
   DIAGNOSIS_WINDOW_SNAPSHOTS,
+  FIRST_JUDGEMENT_MS,
   QUEUE_OVERFLOW_BROKEN_SHARE,
   QUEUE_OVERFLOW_HYSTERESIS_FRACTION,
   QUEUE_OVERFLOW_WARN_SHARE,

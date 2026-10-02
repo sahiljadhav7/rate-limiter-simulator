@@ -10,7 +10,7 @@ import { baselineP99Ms } from './baseline.ts'
 import type { AllowedSubBuckets } from './engine.ts'
 import { bucketAt } from './buckets.ts'
 import type { FixedWindowSpec, LimiterSpec } from './limiter.ts'
-import { QUICK_RETRY_MS, SNAPSHOT_MS, type Snapshot } from './metrics.ts'
+import { QUICK_RETRY_MS, SNAPSHOT_MS, WARM_UP_MS, type Snapshot } from './metrics.ts'
 import { rollingWindowCounts } from './window-counts.ts'
 
 /** A named way the simulated system goes wrong. */
@@ -85,6 +85,12 @@ export interface PastFinding extends Finding {
  * to 74% busy from a single second, .scratch/review/rule-probe.ts).
  */
 export const DIAGNOSIS_WINDOW_SNAPSHOTS = 5
+
+/**
+ * When rules first judge, in ms of simulated time: the warm-up, then one full window. The panel
+ * says diagnosis starts here, so a student does not read the quiet before it as healthy.
+ */
+export const FIRST_JUDGEMENT_MS = WARM_UP_MS + DIAGNOSIS_WINDOW_SNAPSHOTS * SNAPSHOT_MS
 
 /**
  * The share of Attempts sent to the Backend that it lost (shed because the queue was full, or

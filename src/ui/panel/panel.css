@@ -371,6 +371,17 @@
   }
 }
 
+/*
+ * The diagnosis row's line during the warm-up (.scratch/polish/ decision 16): quiet, not a card.
+ * Two classes, so its colour beats .label's, which ties with one and loads later (CLAUDE.md).
+ */
+.diagnosis .diagnosis-warm-up {
+  margin: 0;
+  color: var(--text-dim);
+  /* Sentence case: upper case would turn "10 s" into "10 S", a different unit. */
+  text-transform: none;
+}
+
 /* A stat carries its Finding's severity (DESIGN.md "Stat"). */
 .stat[data-state='warn'] .stat-value {
   color: var(--warn);
