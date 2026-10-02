@@ -5,8 +5,8 @@
  * of rules, one per Failure Mode, each with its own state and hysteresis, and ranks what they
  * find: one Root Cause, every other Finding Contributing.
  *
- * Some thresholds cite measurements on the Edge burst Scenario, which was removed with fixed
- * window on 2026-10-02. Those runs happened and still bound the rules, so their numbers stay.
+ * Every number in these comments is printed by the probe it cites, run on the code as it is:
+ * Backend overload (the one shipped Scenario) and each rule's fixture, seeds 1 to 8, 120 s.
  */
 import { backendCeiling, type BackendSpec } from './backend.ts'
 import { baselineP99Ms } from './baseline.ts'
@@ -97,8 +97,9 @@ export interface PastFinding extends Finding {
  * How many of the newest non-warm-up Snapshots every rule judges: 5 seconds, the same span as
  * the panel's stats and the latency percentiles, long enough that one unlucky second does not
  * decide it. Rules stay silent until there are this many, so a rule first judges at 10 s: a
- * partial window right after the warm-up let one burst second read as the whole window (60%
- * to 74% busy from a single second, .scratch/review/rule-probe.ts).
+ * partial window right after the warm-up let one burst second read as the whole window. In
+ * Backend overload a single burst second runs 67% to 100% busy while no 5 s window passes 24%
+ * (.scratch/evidence/diagnosis-evidence.ts).
  */
 export const DIAGNOSIS_WINDOW_SNAPSHOTS = 5
 
@@ -111,9 +112,9 @@ export const FIRST_JUDGEMENT_MS = WARM_UP_MS + DIAGNOSIS_WINDOW_SNAPSHOTS * SNAP
 /**
  * The share of Attempts sent to the Backend that it lost (shed because the queue was full, or
  * timed out) at which queue overflow becomes `warn`. Measured over seeds 1 to 8 and 120 s
- * (.scratch/review/loss.ts): a healthy Backend loses nothing in either Scenario (token bucket
- * 0.00% in Backend overload at 10 to 40/s; both Limiters 0.00% in Edge burst at 4 and 8/s), and
- * the sliding window counter starting to struggle at 20/s loses 0.25% to 2.7% overall. So 1% is
+ * (.scratch/review/loss.ts): a healthy Backend loses nothing (the token bucket 0.00% in Backend
+ * overload at 10 to 40/s, the sliding window counter 0.00% at 10/s), and the sliding window
+ * counter starting to struggle at 20/s loses 0.25% to 2.7% overall. So 1% is
  * well clear of noise and catches the first real losses.
  */
 export const QUEUE_OVERFLOW_WARN_SHARE = 0.01
@@ -179,25 +180,25 @@ export const SATURATION_RATIO_MARGIN = 0.5
 /**
  * Retry Amplification (Offered Load over Demand, across the window) at which a retry storm
  * becomes `warn` when retries are quick (BaseConcept: 1.5). Without retries it is 1.00 in
- * every window of both Scenarios (seeds 1 to 8, 120 s, .scratch/diagnosis/retry-probe.ts).
+ * every window of Backend overload at 10 and 30/s (.scratch/diagnosis/retry-probe.ts).
  */
 export const RETRY_STORM_AMPLIFICATION = 1.5
 
 /**
  * Retry Amplification at which a retry storm with quick retry Attempts becomes `broken`: each
  * Request sends twice its share. With "Retry at once" the highest window peaks at 2.1x (token
- * bucket) to 2.6x (sliding window counter) in Backend overload at 30/s, and at 2.3x to 2.6x in
- * Edge burst at 4/s (seeds 1 to 8, .scratch/diagnosis/retry-probe.ts).
+ * bucket) to 2.6x (sliding window counter) in Backend overload at 30/s (seeds 1 to 8,
+ * .scratch/diagnosis/retry-probe.ts).
  */
 export const RETRY_STORM_BROKEN_AMPLIFICATION = 2
 
 /**
  * The share of retries that must have started within QUICK_RETRY_MS of their failure for
  * amplification to count as a storm. Amplification alone cannot tell a storm from retries that
- * back off: every retrying policy reaches 2x to 4x in Backend overload at 30/s and Edge burst.
- * Measured in windows at 1.5x or more (seeds 1 to 8, 120 s, default and 3x Demand,
+ * back off: every retrying policy reaches 2.1x to 2.9x in Backend overload at 30/s. Measured in
+ * windows at 1.5x or more (seeds 1 to 8, 120 s, default and 3x Demand,
  * .scratch/diagnosis/retry-probe.ts): "Retry at once" is always 100% quick; "Back off" 0%;
- * "Back off with jitter" at most 27%; "Wait for Retry-After" at most 42%, from a token bucket
+ * "Back off with jitter" at most 14%; "Wait for Retry-After" at most 42%, from a token bucket
  * whose Retry-After is the 14 ms to its next token. Retries timed by the Limiter's own advice
  * are what the fix recommends, so 60% sits well clear of them and of 100%.
  */
@@ -205,9 +206,10 @@ export const RETRY_STORM_QUICK_SHARE = 0.6
 
 /**
  * How many windows in a row must stay under a threshold before a retry storm leaves that
- * severity: 10. In Edge burst retries came with the bursts every 10 s,
- * so with "Retry at once" amplification is over 1.5 in only 60% of windows; without a hold the
- * Finding would start again at every burst.
+ * severity: 10. Retries come with the bursts, so the level comes and goes: with "Retry at once"
+ * at 20/s in Backend overload it is reached in only 68% to 95% of windows (sliding window
+ * counter) and 18% to 50% (token bucket), and without a hold the Finding would start again at
+ * every burst (.scratch/evidence/diagnosis-evidence.ts).
  */
 export const RETRY_STORM_CLEAR_WINDOWS = 10
 
@@ -215,32 +217,33 @@ export const RETRY_STORM_CLEAR_WINDOWS = 10
  * The share of Attempts the Limiter rejected over the window under which, with the Backend
  * saturated, it counts as letting everything through: limit too loose (spec decision 3). Where
  * saturation fires behind a limit far above the Backend, 0.0% are rejected (the saturation
- * fixture, seeds 1 to 8, .scratch/more-rules/spec.md "Measured"); a limit under the Backend's
+ * fixture, seeds 1 to 8, .scratch/more-rules/measure.ts); a limit under the Backend's
  * ceiling that still saturates it, 70/s against 80/s at Demand 100, rejects 22% to 36%.
  */
 export const LIMIT_TOO_LOOSE_REJECTED_SHARE = 0.01
 
 /**
  * How many of the newest Snapshots limit too tight judges: 10 seconds, twice the usual window,
- * so it can tell a steady excess from bursts. Over 5 s a burst lifts the mean: Edge burst's mean
- * Offered Load reaches 1.82x its limit at default Demand, and even the median second reaches
- * exactly 1.00x (.scratch/more-rules/spec.md "Measured"). It first judges at 15 s.
+ * so it can tell a steady excess from bursts: a burst lifts a 5 s mean over the limit while the
+ * steady Demand stays under it, and with retries on Offered Load does too (Backend overload at
+ * 30/s, with retries on, peaks at 0.95 to 1.44x its limit while Demand stays at 0.52x or under,
+ * .scratch/more-rules/measure.ts). It first judges at 15 s.
  */
 export const LIMIT_TOO_TIGHT_SECONDS = 10
 
 /**
  * How many of those seconds must have more new Requests (Demand, not Offered Load, which retries
  * inflate) than the Limiter allows a second: 6, more than half, so the steady Demand is over the
- * limit. A burst fills at most 2 or 3 of 10 seconds (Edge burst 2 to 3, Backend overload 2, at
- * any Demand and Retry Policy, seeds 1 to 8); steady Demand over the limit fills 9 or 10 (the
- * fixture at 50/s against 20/s, Edge burst at 3x).
+ * limit. A burst fills at most 2 of 10 seconds (Backend overload at any Demand and Retry Policy,
+ * seeds 1 to 8, .scratch/more-rules/measure.ts); steady Demand over the limit fills all 10 (the
+ * fixture at 50/s against 20/s).
  */
 export const LIMIT_TOO_TIGHT_OVER_SECONDS = 6
 
 /**
  * The share of Attempts rejected over the 10 s at which limit too tight becomes `warn`
  * (BaseConcept: 30%). A limit just under the steady Demand rejects little and is doing its job;
- * the fixture rejects 54% to 67%, Edge burst at 3x 41% to 87%.
+ * the fixture rejects 54% to 67% (.scratch/more-rules/measure.ts).
  */
 export const LIMIT_TOO_TIGHT_WARN_REJECTED = 0.3
 
@@ -278,15 +281,17 @@ export const LIMIT_TOO_TIGHT_GATE_MARGIN = { busy: 0.05, seconds: 1 } as const
  * Goodput over its own running peak, over the 5 s window, under which goodput collapse becomes
  * `warn`: half of what this Variant has shown it can do. A saturated Backend that still serves
  * never drops below 0.75x (the saturation fixture at 100/s, 68 to 89/s against a peak of 85 to
- * 91/s, seeds 1 to 8); the collapse fixture reaches 0.23x within 5 s of Demand rising past the
- * Backend and 0.00x from then on (.scratch/more-rules/spec.md "Measured").
+ * 91/s, seeds 1 to 8, .scratch/more-rules/measure.ts); the collapse fixture is at 0.23x to 0.47x
+ * five seconds after Demand rises past the Backend and at 0.00x from ten seconds after
+ * (.scratch/more-rules/collapse-series.ts).
  */
 export const GOODPUT_COLLAPSE_WARN_RATIO = 0.5
 
 /**
- * The ratio for `broken`: under a quarter of the peak. The collapse fixture passes 0.23x within
- * 5 s of the rise and stays at 0.00x (seeds 1 to 8), so it is broken from then on; a Backend that
- * loses some work but still finishes most of it sits between this and the warn ratio.
+ * The ratio for `broken`: under a quarter of the peak. The collapse fixture is at 0.23x to 0.47x
+ * five seconds after the rise and at 0.00x from ten seconds after (seeds 1 to 8,
+ * .scratch/more-rules/collapse-series.ts), so it goes amber and then red within seconds; a Backend
+ * that loses some work but still finishes most of it sits between this and the warn ratio.
  */
 export const GOODPUT_COLLAPSE_BROKEN_RATIO = 0.25
 
@@ -313,19 +318,19 @@ export const GOODPUT_COLLAPSE_BUSY_MARGIN = 0.05
 
 /**
  * How many of the newest Snapshots noisy neighbor judges, and in how many of them the top Client
- * must have sent more than its fair share of the limit: all 10, so its greed is steady. Edge
- * burst's scripted bursts all come from one Client, which then takes up to 98% of what is
- * allowed over 5 s, but it is over its fair share in at most 8 of 10 seconds (with "Wait for
- * Retry-After"; 5 with no retry); the greedy fixture's Client is over it in all 10, in every
- * window (.scratch/more-rules/spec.md "Measured").
+ * must have sent more than its fair share of the limit: all 10, so its greed is steady. A Client
+ * in a burst goes over its share for a second or two: with no greedy Client, the busiest one in
+ * Backend overload is over it in at most 4 of 10 seconds (at 30/s with "Back off" or "Wait for
+ * Retry-After"); the greedy fixture's Client is over it in all 10, in every window
+ * (.scratch/more-rules/measure.ts).
  */
 export const NOISY_NEIGHBOR_SECONDS = 10
 
 /**
  * The top Client's share of allowed Attempts over the 10 s above which it may be a noisy neighbor
- * (BaseConcept: 50%). With no greedy Client the top one has 38% to 53% (Edge burst at 3x,
- * Backend overload), which can pass it; the steady and crowding conditions are what keep those
- * quiet, while this one names whose share it is. The greedy fixture's top Client has 81% to 88%.
+ * (BaseConcept: 50%). With no greedy Client the top one has at most 48% (Backend overload at any
+ * Demand and Retry Policy, .scratch/more-rules/measure.ts); the steady and crowding conditions
+ * keep a Client that crosses it briefly quiet. The greedy fixture's top Client has 81% to 88%.
  */
 export const NOISY_NEIGHBOR_TOP_SHARE = 0.5
 
@@ -632,8 +637,7 @@ export function retryStormRule(): Rule {
     // at once", seeds 1 to 8 (.scratch/apply-fix/patch-probe.ts), against broken 110 to 111 s
     // of 111 and 10.0 to 10.6/s as is: back off with jitter, never a storm and 12.8 to 13.4/s;
     // wait for Retry-After, never a storm and 10.9 to 11.5/s; one Attempt fewer, warn throughout
-    // instead of broken and 10.5 to 10.9/s. The same order holds for the token bucket there and
-    // the Edge burst Scenario's Limiters.
+    // instead of broken and 10.5 to 10.9/s. The same order holds for the token bucket there.
     { text: 'Try backing off with jitter, so each new Attempt waits a random, growing time' },
     {
       text: 'Try waiting for Retry-After, so new Attempts come when the Limiter says there is room',
@@ -707,7 +711,7 @@ export function retryStormRule(): Rule {
  * thresholds and hysteresis) behind a Limiter that lets nearly everything through, or whose limit
  * is at or above what the Backend can serve. A limit just over the Backend's ceiling still rejects
  * some: 85/s against 80/s at Demand 100 rejects 7% to 22% with the Backend 97% to 100% busy
- * (.scratch/more-rules/spec.md "Measured"), so the rejected share alone would miss it. As a Cause
+ * (.scratch/more-rules/measure.ts), so the rejected share alone would miss it. As a Cause
  * it explains the saturation Finding beside it.
  */
 export function limitTooLooseRule(backend: BackendSpec, limiter: LimiterSpec): Rule {
@@ -915,7 +919,8 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
   const fixes: readonly Fix[] = [
     // On the fixture (greedy Client a, 60/s, a global limit of 40/s; seeds 1 to 8,
     // .scratch/more-rules/patch-probe.ts), the same limit kept per Client never fires, and
-    // Goodput rises from 40/s to 51 to 53/s, measured for two algorithms. Splitting the 40/s
+    // Goodput rises from 40/s to 51 to 53/s (token bucket) and from 38/s to 49 to 51/s (sliding
+    // window counter). Splitting the 40/s
     // between the Clients (13.3/s each) also clears it, but Goodput falls to 25/s and limit too
     // tight fires, so the limit is kept whole for each.
     { text: 'Try a limit per Client, so one Client using up its limit cannot crowd out the rest' },
