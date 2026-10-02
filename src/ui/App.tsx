@@ -14,6 +14,7 @@ import { TabBar } from './tabs/TabBar.tsx'
 import { headlineStats, shortNames, tabBadge } from './tabs/tabs.ts'
 import { panelStats } from './panel/stats.ts'
 import { PHONE_QUERY, useMediaQuery } from './use-media-query.ts'
+import { RunClockContext } from './run-clock.ts'
 import { useRunner, type RunnerControls } from './use-runner.ts'
 import './app.css'
 
@@ -59,9 +60,14 @@ function ScenarioRun(props: {
   const [scenario, setScenario] = useState<Scenario>(initial)
   const names = useMemo(() => shortNames(scenario.variants), [scenario.variants])
   const { view, controls: runnerControls, slower, hiddenNotice } = useRunner(initial)
-  // Each Variant's p99 as the stat row computes it; the headline array stays the same object
-  // while the values hold, so the memoised controls re-render once a second, not every frame.
-  const p99Key = view.variants
+  const runClock = useMemo(
+    () => ({ speed: view.speed, paused: view.paused }),
+    [view.speed, view.paused],
+  )
+  // Each Variant's p99 as the stat row computes it, on a phone only (wider screens show no
+  // headline); the headline array stays the same object while the values hold, so the memoised
+  // controls re-render once a second, not every frame.
+  const p99Key = (phone ? view.variants : [])
     .map((v, i) => {
       const config = scenario.variants[i]
       return config
@@ -162,35 +168,40 @@ function ScenarioRun(props: {
         />
         <ShareButton url={link} />
       </header>
-      <main className="panels" style={{ '--columns': scenario.variants.length } as CSSProperties}>
-        {scenario.variants.map((config, i) => {
-          // The runner keeps the Scenario's Variant order, so the view lines up with the config.
-          const variant = view.variants[i]
-          return variant ? (
-            <VariantPanel
-              key={config.label}
-              variant={variant}
-              config={config}
-              backend={scenario.backend}
-              clients={scenario.traffic.clients.length}
-              nowMs={view.simMs}
-              index={i}
-              onRetryMode={onRetryMode}
-              panelId={`${panelsId}-${i}`}
-              phone={phone}
-              tabOpen={openTab === i}
+      <RunClockContext.Provider value={runClock}>
+        <main className="panels" style={{ '--columns': scenario.variants.length } as CSSProperties}>
+          {scenario.variants.map((config, i) => {
+            // The runner keeps the Scenario's Variant order, so the view lines up with the config.
+            const variant = view.variants[i]
+            return variant ? (
+              <VariantPanel
+                key={config.label}
+                variant={variant}
+                config={config}
+                backend={scenario.backend}
+                clients={scenario.traffic.clients.length}
+                nowMs={view.simMs}
+                index={i}
+                onRetryMode={onRetryMode}
+                panelId={`${panelsId}-${i}`}
+                phone={phone}
+                tabOpen={openTab === i}
+              />
+            ) : null
+          })}
+          {/* Only a phone has the Compare tab, so wider screens skip its work every frame. */}
+          {phone ? (
+            <ComparePanel
+              id={`${panelsId}-compare`}
+              scenario={scenario}
+              variants={view.variants}
+              names={names}
+              open={openTab === scenario.variants.length}
+              onOpen={setOpenTab}
             />
-          ) : null
-        })}
-        <ComparePanel
-          id={`${panelsId}-compare`}
-          scenario={scenario}
-          variants={view.variants}
-          names={names}
-          open={openTab === scenario.variants.length}
-          onOpen={setOpenTab}
-        />
-      </main>
+          ) : null}
+        </main>
+      </RunClockContext.Provider>
       <TabBar
         tabs={scenario.variants.map((config, i) => ({
           name: names[i] ?? config.label,

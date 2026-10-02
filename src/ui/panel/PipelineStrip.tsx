@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { Severity } from '../../sim/index.ts'
 import type { NodeState } from './node-state.ts'
 import { DASH, formatNumber, formatShare, type PanelStats } from './stats.ts'
+import { useDashAnimation } from './use-dash-animation.ts'
 
 /** A pipeline node's kind, which picks its colours through the `[data-kind]` rules. */
 type Kind = 'client' | 'limiter' | 'backend'
@@ -67,8 +68,8 @@ function Node(props: {
 }
 
 /**
- * The arrow between two nodes, with the rate flowing along it. Static until RS-22. It turns red
- * when the node it feeds is failing (DESIGN.md "Edge").
+ * The arrow between two nodes, with the rate flowing along it: its dashes move faster as more
+ * flows (useDashAnimation). It turns red when the node it feeds is failing (DESIGN.md "Edge").
  */
 function Edge(props: {
   readonly rate: number | null
@@ -76,6 +77,7 @@ function Edge(props: {
   readonly severity?: Severity | null
 }) {
   const text = formatNumber(props.rate)
+  const strip = useDashAnimation(props.rate)
   return (
     <li
       className="edge"
@@ -86,7 +88,11 @@ function Edge(props: {
         {text}
         {props.rate === null ? null : '/s'}
       </span>
-      <span className="edge-line" aria-hidden="true" />
+      <span className="edge-line" aria-hidden="true">
+        <span className="edge-dashes">
+          <span className="edge-strip" ref={strip} />
+        </span>
+      </span>
     </li>
   )
 }

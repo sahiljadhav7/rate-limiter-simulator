@@ -204,21 +204,43 @@
   white-space: nowrap;
 }
 
-/* A static dashed arrow; the dashes move with the rate from RS-22. */
+/*
+ * A dashed arrow whose dashes move toward the next node (DESIGN.md "Edge"). The dashes are a
+ * strip one dash period (8px) longer than the line, clipped by .edge-dashes and slid along it by
+ * a Web Animation of its transform (useDashAnimation), which the browser runs off the main thread.
+ */
+.edge {
+  --edge-color: var(--line-2);
+}
+
 .edge-line {
   position: relative;
   width: 100%;
-  border-top: var(--bw-strong) dashed var(--line-2);
+  height: var(--bw-strong);
+}
+
+.edge-dashes {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.edge-strip {
+  position: absolute;
+  /* Its own layer, so sliding it does not repaint the gradient (about a point less busy). */
+  will-change: transform;
+  inset: 0 0 0 -8px;
+  background: repeating-linear-gradient(to right, var(--edge-color) 0 4px, transparent 4px 8px);
 }
 
 .edge-line::after {
   content: '';
   position: absolute;
   right: -1px;
-  top: -5px;
+  top: -3px;
   border: 4px solid transparent;
   border-right: 0;
-  border-left: 6px solid var(--line-2);
+  border-left: 6px solid var(--edge-color);
 }
 
 /*
@@ -251,20 +273,30 @@
   }
 
   .edge-line {
-    width: 0;
+    width: var(--bw-strong);
     height: 20px;
-    border-top: 0;
-    border-left: var(--bw-strong) dashed var(--line-2);
+  }
+
+  /*
+   * The same horizontal strip, turned to point down: rotated a quarter turn about its top-left
+   * corner, which puts it left of the line, then moved right by the line's width.
+   */
+  .edge-dashes {
+    inset: 0 auto auto 0;
+    width: 20px;
+    height: var(--bw-strong);
+    transform-origin: 0 0;
+    transform: translateX(var(--bw-strong)) rotate(90deg);
   }
 
   .edge-line::after {
     right: auto;
     top: auto;
     bottom: -1px;
-    left: calc(-4px - var(--bw-strong) / 2);
+    left: calc(var(--bw-strong) / 2 - 4px);
     border: 4px solid transparent;
     border-bottom: 0;
-    border-top: 6px solid var(--line-2);
+    border-top: 6px solid var(--edge-color);
   }
 }
 
@@ -349,26 +381,13 @@
   }
 }
 
-/* The edge into a failing node (DESIGN.md "Edge"): --danger at half opacity. */
+/* The edge into a failing node (DESIGN.md "Edge"): --danger at half opacity, still moving. */
+.edge[data-state='broken'] {
+  --edge-color: var(--danger);
+}
+
 .edge[data-state='broken'] .edge-line {
-  border-top-color: var(--danger);
   opacity: 0.5;
-}
-
-.edge[data-state='broken'] .edge-line::after {
-  border-left-color: var(--danger);
-}
-
-/* In a narrow panel the edge points down: the line is its left border, the arrow its top. */
-@container pipeline (max-width: 359px) {
-  .edge[data-state='broken'] .edge-line {
-    border-left-color: var(--danger);
-  }
-
-  .edge[data-state='broken'] .edge-line::after {
-    border-left-color: transparent;
-    border-top-color: var(--danger);
-  }
 }
 
 /*
