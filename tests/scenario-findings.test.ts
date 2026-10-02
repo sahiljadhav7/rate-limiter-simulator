@@ -68,6 +68,23 @@ const stormAndBurst = {
   modes: { 'retry-storm': 'broken', 'boundary-burst': 'broken' },
   roots: ['retry-storm'],
 }
+// Edge burst at 3x: background Demand of 12/s is over the limit of 10/s in nearly every second,
+// so limit too tight fires from 15 s (.scratch/more-rules/spec.md "Measured"). It starts after
+// the boundary burst and the retry storm, so they keep Root Cause; behind the sliding window
+// counter, with nothing else wrong, it is the Root Cause.
+const tight = { modes: { 'limit-too-tight': 'broken' }, roots: ['limit-too-tight'] }
+const burstAndTight = {
+  modes: { 'boundary-burst': 'broken', 'limit-too-tight': 'broken' },
+  roots: ['boundary-burst'],
+}
+const stormBurstAndTight = {
+  modes: { 'retry-storm': 'broken', 'boundary-burst': 'broken', 'limit-too-tight': 'broken' },
+  roots: ['retry-storm'],
+}
+const stormAndTight = {
+  modes: { 'retry-storm': 'broken', 'limit-too-tight': 'broken' },
+  roots: ['retry-storm'],
+}
 
 /**
  * Every Scenario at its default Demand and at 3x, as is and with "Retry at once" and "Back off
@@ -88,9 +105,9 @@ const TABLE: readonly Row[] = [
   ['Edge burst', edgeBurstScenario, 4, undefined, [burst, none]],
   ['Edge burst', edgeBurstScenario, 4, 'immediate', [stormAndBurst, storm]],
   ['Edge burst', edgeBurstScenario, 4, 'backoff-jitter', [burst, none]],
-  ['Edge burst', edgeBurstScenario, 12, undefined, [burst, none]],
-  ['Edge burst', edgeBurstScenario, 12, 'immediate', [stormAndBurst, storm]],
-  ['Edge burst', edgeBurstScenario, 12, 'backoff-jitter', [burst, none]],
+  ['Edge burst', edgeBurstScenario, 12, undefined, [burstAndTight, tight]],
+  ['Edge burst', edgeBurstScenario, 12, 'immediate', [stormBurstAndTight, stormAndTight]],
+  ['Edge burst', edgeBurstScenario, 12, 'backoff-jitter', [burstAndTight, tight]],
 ]
 
 describe('Scenario Findings table', () => {

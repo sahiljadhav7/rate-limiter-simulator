@@ -16,7 +16,12 @@ import { rollingWindowCounts } from './window-counts.ts'
 
 /** A named way the simulated system goes wrong. */
 export type FailureMode =
-  'saturation' | 'queue-overflow' | 'boundary-burst' | 'retry-storm' | 'limit-too-loose'
+  | 'saturation'
+  | 'queue-overflow'
+  | 'boundary-burst'
+  | 'retry-storm'
+  | 'limit-too-loose'
+  | 'limit-too-tight'
 
 /** A Cause is a design mistake; a Symptom is what it does to the system. */
 export type FindingKind = 'cause' | 'symptom'
@@ -33,6 +38,7 @@ export const FAILURE_MODES: Readonly<
   'boundary-burst': { label: 'Boundary burst', kind: 'cause' },
   'retry-storm': { label: 'Retry storm', kind: 'cause' },
   'limit-too-loose': { label: 'Limit too loose', kind: 'cause' },
+  'limit-too-tight': { label: 'Limit too tight', kind: 'cause' },
 }
 
 /**
@@ -246,6 +252,48 @@ export const RETRY_STORM_CLEAR_WINDOWS = 10
  * ceiling that still saturates it, 70/s against 80/s at Demand 100, rejects 22% to 36%.
  */
 export const LIMIT_TOO_LOOSE_REJECTED_SHARE = 0.01
+
+/**
+ * How many of the newest Snapshots limit too tight judges: 10 seconds, twice the usual window,
+ * so it can tell a steady excess from bursts. Over 5 s a burst lifts the mean: Edge burst's mean
+ * Offered Load reaches 1.82x its limit at default Demand, and even the median second reaches
+ * exactly 1.00x (.scratch/more-rules/spec.md "Measured"). It first judges at 15 s.
+ */
+export const LIMIT_TOO_TIGHT_SECONDS = 10
+
+/**
+ * How many of those seconds must have more new Requests (Demand, not Offered Load, which retries
+ * inflate) than the Limiter allows a second: 6, more than half, so the steady Demand is over the
+ * limit. A burst fills at most 2 or 3 of 10 seconds (Edge burst 2 to 3, Backend overload 2, at
+ * any Demand and Retry Policy, seeds 1 to 8); steady Demand over the limit fills 9 or 10 (the
+ * fixture at 50/s against 20/s, Edge burst at 3x).
+ */
+export const LIMIT_TOO_TIGHT_OVER_SECONDS = 6
+
+/**
+ * The share of Attempts rejected over the 10 s at which limit too tight becomes `warn`
+ * (BaseConcept: 30%). A limit just under the steady Demand rejects little and is doing its job;
+ * the fixture rejects 54% to 67%, Edge burst at 3x 41% to 87%.
+ */
+export const LIMIT_TOO_TIGHT_WARN_REJECTED = 0.3
+
+/** The rejected share for `broken`: the Limiter turns away most of what arrives. */
+export const LIMIT_TOO_TIGHT_BROKEN_REJECTED = 0.5
+
+/**
+ * Limit too tight leaves a severity only once the rejected share falls this far below the
+ * threshold that entered it (broken under 45%, warn under 25%), so a share near a threshold does
+ * not flicker.
+ */
+export const LIMIT_TOO_TIGHT_REJECTED_MARGIN = 0.05
+
+/**
+ * The Backend's mean busy share over the 10 s under which it counts as idle enough that the
+ * limit, not the Backend, is what turns work away (BaseConcept: 40%). The fixture runs 21% to
+ * 28% busy; a greedy Client against 40/s runs 46% to 55% and stays quiet, while against 30/s
+ * it straddles 40% (34% to 41%).
+ */
+export const LIMIT_TOO_TIGHT_IDLE_BUSY = 0.4
 
 /**
  * The first backoff, in ms, a fix gives a Retry Policy that had none: the same as the Retry
@@ -782,12 +830,81 @@ export function limitTooLooseRule(backend: BackendSpec, limiter: LimiterSpec): R
   }
 }
 
+/**
+ * The limit too tight rule: over the last LIMIT_TOO_TIGHT_SECONDS, the steady Demand above what
+ * the Limiter allows, a large share rejected, and the Backend mostly idle, so the limit turns
+ * away work the Backend could have done. It keeps its own Snapshots, as it judges more than one
+ * window.
+ */
+export function limitTooTightRule(limiter: LimiterSpec): Rule {
+  const recent: Snapshot[] = []
+  let severity: Severity | null = null
+  const fixes: readonly Fix[] = [{ text: 'Try a higher limit, toward what the Backend can serve' }]
+
+  /** The severity after a span that rejected `share`, given the one before. */
+  function nextSeverity(share: number): Severity | null {
+    const margin = LIMIT_TOO_TIGHT_REJECTED_MARGIN
+    const broken = LIMIT_TOO_TIGHT_BROKEN_REJECTED
+    const warn = LIMIT_TOO_TIGHT_WARN_REJECTED
+    if (share > broken || (severity === 'broken' && share > broken - margin)) return 'broken'
+    if (share > warn || (severity !== null && share > warn - margin)) return 'warn'
+    return null
+  }
+
+  return {
+    id: 'limit-too-tight',
+    judge(window) {
+      for (const snapshot of window) {
+        if (snapshot.t > (recent.at(-1)?.t ?? -Infinity)) recent.push(snapshot)
+      }
+      while (recent.length > LIMIT_TOO_TIGHT_SECONDS) recent.shift()
+      if (recent.length < LIMIT_TOO_TIGHT_SECONDS) return null
+      const keys =
+        limiter.keyBy === 'client'
+          ? Math.max(1, Object.keys(recent.at(-1)?.perClient ?? {}).length)
+          : 1
+      const allows = allowedPerSecond(limiter) * keys
+      const sum = (pick: (s: Snapshot) => number) => recent.reduce((t, s) => t + pick(s), 0)
+      const overSeconds = recent.filter((s) => s.demand > allows).length
+      const offered = sum((s) => s.offeredLoad)
+      const share = offered === 0 ? 0 : sum((s) => s.rejected) / offered
+      const busy = sum((s) => s.backendUtil) / recent.length
+      const steady = overSeconds >= LIMIT_TOO_TIGHT_OVER_SECONDS
+      severity = steady && busy < LIMIT_TOO_TIGHT_IDLE_BUSY ? nextSeverity(share) : null
+      if (severity === null) return null
+      const demand = sum((s) => s.demand) / recent.length
+      const perSecond = (n: number) => `${n.toFixed(1)}/s`
+      const allowsText = `${Number.isInteger(allows) ? allows : allows.toFixed(1)}/s`
+      return {
+        severity,
+        evidence: [
+          { metric: 'Rejected', value: percent(share) },
+          { metric: 'Demand', value: perSecond(demand) },
+          { metric: 'Limiter allows', value: allowsText },
+          {
+            metric: 'Seconds over the limit',
+            value: `${overSeconds} of ${LIMIT_TOO_TIGHT_SECONDS}`,
+          },
+          { metric: 'Busy', value: percent(busy) },
+        ],
+        why:
+          `In ${overSeconds} of the last ${LIMIT_TOO_TIGHT_SECONDS} seconds more new Requests ` +
+          `arrived than the Limiter allows (${perSecond(demand)} against ${allowsText}), so it ` +
+          `turned away ${percent(share)} of Attempts while the Backend was busy only ` +
+          `${percent(busy)} of the time.`,
+        fixes,
+      }
+    },
+  }
+}
+
 /** The rules every Variant is diagnosed with: boundary burst only behind a fixed window. */
 export function defaultRules({ backend, limiter, retry }: DiagnoserOptions): Rule[] {
   return [
     ...(limiter.algo === 'fixed-window' ? [boundaryBurstRule(limiter)] : []),
     retryStormRule(retry),
     limitTooLooseRule(backend, limiter),
+    limitTooTightRule(limiter),
     saturationRule(backend, limiter),
     queueOverflowRule(backend, limiter),
   ]
