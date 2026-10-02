@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { createRunner, FRAME_CAP_MS, type Runner } from '../src/runner/runner.ts'
-import { applyFix, removeFix } from '../src/runner/apply-fix.ts'
 import { subBucketMsFor, type Scenario } from '../src/runner/scenario.ts'
 import { createDiagnoser } from '../src/sim/diagnosis.ts'
 import { createEngine } from '../src/sim/engine.ts'
 import { createLimiter } from '../src/sim/limiter.ts'
 import { createStreams } from '../src/sim/rng.ts'
 import { createTrafficSource, type ControlChange } from '../src/sim/traffic-source.ts'
-import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
 
 /**
  * Three Variants on traffic that keeps every path busy: 200 rps against Limiters allowing 120
@@ -86,8 +84,7 @@ function runDirectly(s: Scenario, untilMs: number) {
       traffic: source.reader(),
       limiter: createLimiter(variant.limiter),
       retry: variant.retry,
-      // Merged by hand, so the runner's own merge is checked against it.
-      backend: { ...s.backend, ...variant.backend },
+      backend: s.backend,
       streams: createStreams(s.seed),
       subBucketMs: subBucketMsFor(variant.limiter),
     }),
@@ -128,41 +125,6 @@ describe('createRunner', () => {
 
   it('throws a RangeError for an invalid Scenario', () => {
     expect(() => createRunner({ ...scenario, variants: [] })).toThrow(RangeError)
-  })
-})
-
-describe("a Variant's own Backend", () => {
-  /** The token bucket with twice the slots, and the sliding counter with a queue of 5. */
-  const own: Scenario = {
-    ...scenario,
-    variants: scenario.variants.map((variant, i) =>
-      i === 1
-        ? { ...variant, backend: { slots: 8 } }
-        : i === 2
-          ? { ...variant, backend: { queueLimit: 5 } }
-          : variant,
-    ),
-  }
-
-  it("runs that Variant on it, and every other Variant on the Scenario's Backend", () => {
-    const runner = createRunner(own, UNLIMITED)
-    tickTo(runner, 6000)
-    expect(results(runner)).toEqual(resultsDirectly(own, 6000))
-    const shared = createRunner(scenario, UNLIMITED)
-    tickTo(shared, 6000)
-    const [fixed, token] = results(runner)
-    const [fixedShared, tokenShared] = results(shared)
-    expect(fixed).toEqual(fixedShared)
-    expect(token?.totals).not.toEqual(tokenShared?.totals)
-  })
-
-  it('is what that Variant is diagnosed against', () => {
-    const runner = createRunner(own, UNLIMITED)
-    tickTo(runner, 20_000)
-    const overflow = (i: number) =>
-      runner.view().variants[i]?.findings.find((f) => f.id === 'queue-overflow')?.why
-    expect(overflow(0)).toMatch(/The queue of 20 filled/)
-    expect(overflow(2)).toMatch(/The queue of 5 filled/)
   })
 })
 
@@ -519,46 +481,16 @@ describe('restart', () => {
     expect(results(runner)).toEqual(restarted)
   })
 
-  it('runs a fix beside its original, which replays exactly as on its own; and back without it', () => {
-    for (const seed of [1, 2, 3]) {
-      // At 30/s the sliding counter overflows its queue, so more slots really changes its run.
-      const authored = {
-        ...backendOverloadScenario,
-        seed,
-        traffic: { ...backendOverloadScenario.traffic, demandRps: 30 },
-      }
-      const runner = createRunner(authored, UNLIMITED)
-      tickTo(runner, 4000)
-      const fixed = applyFix(authored, 0, {
-        text: 'Try more Backend slots',
-        patch: { name: 'more slots', backend: { slots: 8 } },
-      })
-      runner.restart(fixed)
-      expect(runner.view().variants.map((v) => v.label)).toEqual([
-        'Sliding window counter',
-        'Sliding window counter, more slots',
-        'Token bucket',
-      ])
-      tickTo(runner, 30_000)
-      const alone = createRunner(authored, UNLIMITED)
-      tickTo(alone, 30_000)
-      const [original, fix, token] = results(runner)
-      const [originalAlone, tokenAlone] = results(alone)
-      expect(original).toEqual(originalAlone)
-      expect(token).toEqual(tokenAlone)
-      expect(fix?.totals).not.toEqual(originalAlone?.totals)
-
-      runner.restart(removeFix(fixed))
-      tickTo(runner, 30_000)
-      expect(results(runner)).toEqual(results(alone))
-    }
-  })
-
-  it('throws a RangeError, leaving the run unchanged, for an invalid Scenario or other Clients', () => {
+  it('throws a RangeError, leaving the run unchanged, for other Variants or Clients', () => {
     const runner = createRunner(scenario, UNLIMITED)
     tickTo(runner, 2000)
     const before = results(runner)
-    expect(() => runner.restart({ ...scenario, variants: [] })).toThrow(RangeError)
+    expect(() => runner.restart({ ...scenario, variants: scenario.variants.slice(1) })).toThrow(
+      RangeError,
+    )
+    // Checked whole, so labels that clash are refused too, not only the Variant count.
+    const clash = scenario.variants.map((v) => ({ ...v, label: 'Same' }))
+    expect(() => runner.restart({ ...scenario, variants: clash })).toThrow(RangeError)
     expect(() =>
       runner.restart({
         ...scenario,
@@ -576,13 +508,9 @@ describe('Findings', () => {
     tickTo(runner, 20_000, [16, 33, 100])
     const { variants } = runner.view()
     variants.forEach((variant, i) => {
-      const config = scenario.variants[i]
-      if (config === undefined) throw new Error(`No Variant ${i}`)
-      const direct = createDiagnoser({
-        backend: scenario.backend,
-        limiter: config.limiter,
-        retry: config.retry,
-      })
+      const limiter = scenario.variants[i]?.limiter
+      if (limiter === undefined) throw new Error(`No Variant ${i}`)
+      const direct = createDiagnoser({ backend: scenario.backend, limiter })
       for (const snapshot of variant.snapshots) direct.add(snapshot, variant.allowedSubBuckets)
       expect(variant.findings).toEqual(direct.findings())
       expect(variant.pastFindings).toEqual(direct.history())

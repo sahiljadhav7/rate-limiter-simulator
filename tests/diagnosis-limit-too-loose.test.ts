@@ -71,7 +71,7 @@ describe('the limit too loose rule', () => {
     }
   })
 
-  it('names the evidence, says why from the numbers, and offers a lower limit', () => {
+  it('names the evidence, says why from the numbers, and suggests a lower limit', () => {
     const last = findingsEachSecond(scenario(lets(10_000, 10_000))).at(-1)
     const finding = last && loose(last)
     expect(finding?.evidence.map((e) => e.metric)).toEqual([
@@ -84,6 +84,8 @@ describe('the limit too loose rule', () => {
     expect(finding?.why).toMatch(
       /^The Limiter allows 10,000\/s and turned away 0\.0% of Attempts, but the Backend can serve only 80\/s, so it was busy \d+\.\d% of the time\.$/,
     )
-    expect(finding?.fixes[0]?.patch?.limiter).toEqual(lets(60, 20))
+    expect(finding?.fixes.map((fix) => fix.text)).toEqual([
+      'Try a limit below what the Backend can serve, with room to spare (it turns more away, but what gets through is quick)',
+    ])
   })
 })

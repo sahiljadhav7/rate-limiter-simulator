@@ -1,7 +1,7 @@
-import { memo, useCallback, useId, type CSSProperties, type ReactNode } from 'react'
+import { memo, useId, type CSSProperties, type ReactNode } from 'react'
 import type { VariantView } from '../../runner/runner.ts'
 import type { VariantConfig } from '../../runner/scenario.ts'
-import type { BackendSpec, Fix, Severity } from '../../sim/index.ts'
+import type { BackendSpec, Severity } from '../../sim/index.ts'
 import { RETRY_MODES, type RetryMode } from '../controls/retry-options.ts'
 import { CHART_ROWS, VariantCharts } from '../VariantCharts.tsx'
 import { DiagnosisSlot } from './DiagnosisCard.tsx'
@@ -87,12 +87,6 @@ export interface VariantPanelProps {
   readonly index: number
   /** Switches Variant `index` to `mode`, which restarts the run. */
   readonly onRetryMode: (index: number, mode: RetryMode) => void
-  /** Every Variant of the Scenario, to see which fix is applied. */
-  readonly variants: readonly VariantConfig[]
-  /** Applies `fix` to Variant `index` as a new Variant, which restarts the run. */
-  readonly onApplyFix: (index: number, fix: Fix) => void
-  /** Removes the applied fix's Variant, which restarts the run. */
-  readonly onRemoveFix: () => void
   /** The panel's id, which the phone's tab names in `aria-controls`. */
   readonly panelId: string
   /** Below 640px: the panel is a tab panel, shown only while its tab is open. */
@@ -109,10 +103,7 @@ export interface VariantPanelProps {
 export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps) {
   const { variant, config, backend, clients, nowMs, index, onRetryMode, panelId, phone, tabOpen } =
     props
-  const { variants, onApplyFix, onRemoveFix } = props
   const headingId = `${panelId}-heading`
-  const fixNoteId = `${panelId}-fix-note`
-  const onApply = useCallback((fix: Fix) => onApplyFix(index, fix), [onApplyFix, index])
   const retryId = useId()
   const stats = panelStats(variant.snapshots, config.limiter, clients)
   const backendState = nodeState(variant.findings, 'backend')
@@ -123,7 +114,6 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
       // Focusable from script: an ended Finding's marker pill moves here.
       tabIndex={-1}
       aria-labelledby={headingId}
-      aria-describedby={config.fixOf === undefined ? undefined : fixNoteId}
       role={phone ? 'tabpanel' : undefined}
       data-tab-open={tabOpen}
       style={{ '--panel-rows': PANEL_ROWS } as CSSProperties}
@@ -133,41 +123,23 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
         <h2 id={headingId}>{config.label}</h2>
         <span className="pill">{ALGORITHM_NAMES[config.limiter.algo]}</span>
         <span className="pill">{KEY_SCOPE_NAMES[config.limiter.keyBy]}</span>
-        {config.fixOf === undefined ? null : (
-          <>
-            <span className="pill pill-fix">Fix applied</span>
-            <span className="visually-hidden" id={fixNoteId}>
-              A fix applied to {config.fixOf}, running beside it from 0 on the same traffic.
-            </span>
-            <button type="button" className="btn fix-remove" onClick={onRemoveFix}>
-              Remove fix
-            </button>
-          </>
-        )}
         <span className="retry">
           <label className="label" htmlFor={retryId}>
             Retry Policy
           </label>
-          {config.fixOf === undefined ? (
-            <select
-              id={retryId}
-              className="field"
-              value={config.retry.retry}
-              title="Changing it restarts the run from 0, without an applied fix"
-              onChange={(event) => onRetryMode(index, event.currentTarget.value as RetryMode)}
-            >
-              {RETRY_MODES.map(({ mode, name }) => (
-                <option key={mode} value={mode}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            // A fixed Variant's policy is part of its fix, so it is shown, not chosen.
-            <output id={retryId} className="retry-fixed">
-              {RETRY_MODES.find(({ mode }) => mode === config.retry.retry)?.name}
-            </output>
-          )}
+          <select
+            id={retryId}
+            className="field"
+            value={config.retry.retry}
+            title="Changing it restarts the run from 0"
+            onChange={(event) => onRetryMode(index, event.currentTarget.value as RetryMode)}
+          >
+            {RETRY_MODES.map(({ mode, name }) => (
+              <option key={mode} value={mode}>
+                {name}
+              </option>
+            ))}
+          </select>
         </span>
       </header>
       <PipelineStrip stats={stats} backend={backendState} />
@@ -184,9 +156,6 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
         findings={variant.findings}
         panelId={panelId}
         warmUpLine={diagnosisWarmUpLine(nowMs)}
-        config={config}
-        variants={variants}
-        onApply={onApply}
       />
     </section>
   )

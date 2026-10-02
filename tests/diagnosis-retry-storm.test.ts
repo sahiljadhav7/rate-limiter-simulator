@@ -11,7 +11,6 @@ const allowed: AllowedSubBuckets = { bucketMs: 100, counts: [] }
 const options = {
   backend: backendOverloadScenario.backend,
   limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 },
-  retry: { timeoutMs: 500, maxAttempts: 3, retry: 'immediate' },
 } as const
 
 /**
@@ -19,7 +18,7 @@ const options = {
  * the retry storm rule alone after the warm-up. Retries are Offered Load minus Demand.
  */
 function severities(seconds: readonly (readonly [number, number, number])[]) {
-  const diagnoser = createDiagnoser(options, [retryStormRule(options.retry)])
+  const diagnoser = createDiagnoser(options, [retryStormRule()])
   return seconds.map(([demand, offeredLoad, quickRetryAttempts], i) => {
     const retries = offeredLoad - demand
     diagnoser.add(
@@ -72,7 +71,7 @@ describe('the retry storm rule', () => {
   )
 
   it('names the evidence and says why from the numbers', () => {
-    const diagnoser = createDiagnoser(options, [retryStormRule(options.retry)])
+    const diagnoser = createDiagnoser(options, [retryStormRule()])
     for (let i = 0; i < 5; i++) {
       const s = snapshotAt((6 + i) * 1000, {
         demand: 10,

@@ -27,7 +27,6 @@ import {
   createScenarioSource,
   subBucketMsFor,
   type Scenario,
-  variantBackend,
   type VariantConfig,
 } from './scenario.ts'
 
@@ -126,9 +125,9 @@ export interface Runner {
    * seed, with no live change replayed: a caller that wants to keep the current Demand puts it
    * in `next`'s traffic, as a shared link does. Replaying would move the Demand slider on its
    * own as the run passed the times of the old changes. The speed and whether it is paused stay
-   * as they were; a later reset returns to `next`. `next` may have more or fewer Variants, as when
-   * a fix is applied or removed, and the view's Variants follow it. Throws a RangeError, leaving
-   * the run unchanged, if `next` is invalid or has other Clients than the current Scenario.
+   * as they were; a later reset returns to `next`. Throws a RangeError, leaving the run
+   * unchanged, if `next` is invalid or has other Clients or another number of Variants than the
+   * current Scenario, which the panels depend on.
    */
   restart(next: Scenario): void
   /** Throws a RangeError for a speed not in SPEEDS. */
@@ -162,8 +161,13 @@ interface Run {
   readonly variants: readonly RunVariant[]
 }
 
-/** Throws a RangeError unless `next` has the same Clients as `current`. */
-function checkSameClients(current: Scenario, next: Scenario): void {
+/** Throws a RangeError unless `next` has the same Clients and number of Variants as `current`. */
+function checkSameShape(current: Scenario, next: Scenario): void {
+  if (next.variants.length !== current.variants.length) {
+    throw new RangeError(
+      `A restart keeps ${current.variants.length} Variants, got ${next.variants.length}`,
+    )
+  }
   const clients = (s: Scenario) => s.traffic.clients.join(', ')
   if (clients(next) !== clients(current)) {
     throw new RangeError(`A restart keeps the Clients ${clients(current)}, got ${clients(next)}`)
@@ -172,24 +176,21 @@ function checkSameClients(current: Scenario, next: Scenario): void {
 
 function startRun(scenario: Scenario): Run {
   const source = createScenarioSource(scenario)
-  const variants = scenario.variants.map((config, i) => {
-    const backend = variantBackend(scenario, i)
-    return {
-      config,
-      engine: createEngine({
-        traffic: source.reader(),
-        limiter: createLimiter(config.limiter),
-        retry: config.retry,
-        backend,
-        // Each Variant has its own streams from the same seed, so service times and jitter
-        // draws in one never shift another's.
-        streams: createStreams(scenario.seed),
-        subBucketMs: subBucketMsFor(config.limiter),
-      }),
-      diagnoser: createDiagnoser({ backend, limiter: config.limiter, retry: config.retry }),
-      diagnosed: 0,
-    }
-  })
+  const variants = scenario.variants.map((config) => ({
+    config,
+    engine: createEngine({
+      traffic: source.reader(),
+      limiter: createLimiter(config.limiter),
+      retry: config.retry,
+      backend: scenario.backend,
+      // Each Variant has its own streams from the same seed, so service times and jitter
+      // draws in one never shift another's.
+      streams: createStreams(scenario.seed),
+      subBucketMs: subBucketMsFor(config.limiter),
+    }),
+    diagnoser: createDiagnoser({ backend: scenario.backend, limiter: config.limiter }),
+    diagnosed: 0,
+  }))
   return { source, variants }
 }
 
@@ -265,8 +266,9 @@ export function createRunner(scenario: Scenario, options: RunnerOptions = {}): R
       run.source.trim()
     },
     restart(next) {
+      // Checked whole, as createRunner does: building the run alone misses clashing labels.
       checkScenario(next)
-      checkSameClients(current, next)
+      checkSameShape(current, next)
       const nextRun = startRun(next)
       current = next
       run = nextRun
