@@ -434,9 +434,11 @@ function allowedOverKeys(limiter: LimiterSpec, snapshot: Snapshot | undefined): 
 /**
  * Severity with hysteresis for a rule judged by one number against two thresholds: a level is
  * entered past its threshold and left only once the number is `margin` back on the healthy side,
- * so a value near a threshold does not flicker. `worse` says which way is worse. The returned
- * function takes each span's value, or null when the rule's other conditions do not hold, which
- * clears it.
+ * so a value near a threshold does not flicker. `worse` says which way is worse. `judge` takes
+ * each span's value, or null when the rule's other conditions do not hold, which clears it;
+ * `active` says whether the last span left a Finding, for a rule whose gates hold with a margin
+ * once it is active. Saturation and queue overflow keep their own: saturation judges two numbers
+ * at once, and queue overflow's margin is a share of each threshold rather than a fixed step.
  */
 function createLevels(levels: {
   readonly warn: number
@@ -449,15 +451,34 @@ function createLevels(levels: {
   /** How far `value` is past `threshold` on the worse side; positive is past it. */
   const past = (value: number, threshold: number) => sign * (value - threshold)
   let severity: Severity | null = null
-  return (value: number | null): Severity | null => {
-    if (value === null) severity = null
-    else if (past(value, broken) > 0 || (severity === 'broken' && past(value, broken) > -margin)) {
-      severity = 'broken'
-    } else if (past(value, warn) > 0 || (severity !== null && past(value, warn) > -margin)) {
-      severity = 'warn'
-    } else severity = null
-    return severity
+  return {
+    judge(value: number | null): Severity | null {
+      if (value === null) severity = null
+      else if (
+        past(value, broken) > 0 ||
+        (severity === 'broken' && past(value, broken) > -margin)
+      ) {
+        severity = 'broken'
+      } else if (past(value, warn) > 0 || (severity !== null && past(value, warn) > -margin)) {
+        severity = 'warn'
+      } else severity = null
+      return severity
+    },
+    active(): boolean {
+      return severity !== null
+    },
   }
+}
+
+/** `pick` summed over `snapshots`. */
+function sumOf(snapshots: readonly Snapshot[], pick: (s: Snapshot) => number): number {
+  return snapshots.reduce((t, s) => t + pick(s), 0)
+}
+
+/** The share of Attempts the Limiter rejected over `snapshots`; 0 when none reached it. */
+function rejectedShare(snapshots: readonly Snapshot[]): number {
+  const offered = sumOf(snapshots, (s) => s.offeredLoad)
+  return offered === 0 ? 0 : sumOf(snapshots, (s) => s.rejected) / offered
 }
 
 function percent(share: number): string {
@@ -500,11 +521,10 @@ export function queueOverflowRule(backend: BackendSpec): Rule {
   return {
     id: 'queue-overflow',
     judge(window) {
-      const sum = (pick: (s: Snapshot) => number) => window.reduce((t, s) => t + pick(s), 0)
       // Attempts sent to the Backend: allowed now, or delayed and released later.
-      const sent = sum((s) => s.allowed + s.delayed)
-      const shed = sum((s) => s.shed)
-      const timedOut = sum((s) => s.attemptsTimedOut)
+      const sent = sumOf(window, (s) => s.allowed + s.delayed)
+      const shed = sumOf(window, (s) => s.shed)
+      const timedOut = sumOf(window, (s) => s.attemptsTimedOut)
       // With nothing sent for 5 s nothing can be lost, so there is no share and no Finding.
       const share = sent === 0 ? null : (shed + timedOut) / sent
       severity = nextSeverity(share)
@@ -657,11 +677,10 @@ export function retryStormRule(): Rule {
   return {
     id: 'retry-storm',
     judge(window) {
-      const sum = (pick: (s: Snapshot) => number) => window.reduce((t, s) => t + pick(s), 0)
-      const demand = sum((s) => s.demand)
-      const offered = sum((s) => s.offeredLoad)
-      const retryAttempts = sum((s) => s.retryAttempts)
-      const quickAttempts = sum((s) => s.quickRetryAttempts)
+      const demand = sumOf(window, (s) => s.demand)
+      const offered = sumOf(window, (s) => s.offeredLoad)
+      const retryAttempts = sumOf(window, (s) => s.retryAttempts)
+      const quickAttempts = sumOf(window, (s) => s.quickRetryAttempts)
       const reading = {
         demand,
         offered,
@@ -731,12 +750,10 @@ export function limitTooLooseRule(backend: BackendSpec, limiter: LimiterSpec): R
       // Judged every window, so the saturation rule's hysteresis follows the run.
       const saturated = saturation.judge(window, allowed)
       if (saturated === null) return null
-      const sum = (pick: (s: Snapshot) => number) => window.reduce((t, s) => t + pick(s), 0)
-      const offered = sum((s) => s.offeredLoad)
-      const share = offered === 0 ? 0 : sum((s) => s.rejected) / offered
+      const share = rejectedShare(window)
       const allows = allowedOverKeys(limiter, window.at(-1))
       if (share >= LIMIT_TOO_LOOSE_REJECTED_SHARE && allows < ceiling) return null
-      const busy = sum((s) => s.backendUtil) / window.length
+      const busy = sumOf(window, (s) => s.backendUtil) / window.length
       return {
         severity: saturated.severity,
         evidence: [
@@ -786,10 +803,8 @@ export function limitTooTightRule(limiter: LimiterSpec): Rule {
     { text: 'Try a higher limit, toward what the Backend can serve' },
   ]
 
-  /** Whether it is active after the last span, so its gates hold with a margin. */
-  let active = false
   /** The severity after a span that rejected a share, given the one before. */
-  const level = createLevels({
+  const levels = createLevels({
     warn: LIMIT_TOO_TIGHT_WARN_REJECTED,
     broken: LIMIT_TOO_TIGHT_BROKEN_REJECTED,
     margin: LIMIT_TOO_TIGHT_REJECTED_MARGIN,
@@ -802,19 +817,16 @@ export function limitTooTightRule(limiter: LimiterSpec): Rule {
       const recent = newest(window)
       if (recent === null) return null
       const allows = allowedOverKeys(limiter, recent.at(-1))
-      const sum = (pick: (s: Snapshot) => number) => recent.reduce((t, s) => t + pick(s), 0)
       const overSeconds = recent.filter((s) => s.demand > allows).length
-      const offered = sum((s) => s.offeredLoad)
-      const share = offered === 0 ? 0 : sum((s) => s.rejected) / offered
-      const busy = sum((s) => s.backendUtil) / recent.length
+      const share = rejectedShare(recent)
+      const busy = sumOf(recent, (s) => s.backendUtil) / recent.length
       // Once active, each gate holds with a margin (LIMIT_TOO_TIGHT_GATE_MARGIN).
-      const held = active ? LIMIT_TOO_TIGHT_GATE_MARGIN : { busy: 0, seconds: 0 }
+      const held = levels.active() ? LIMIT_TOO_TIGHT_GATE_MARGIN : { busy: 0, seconds: 0 }
       const steady = overSeconds >= LIMIT_TOO_TIGHT_OVER_SECONDS - held.seconds
       const idle = busy < LIMIT_TOO_TIGHT_IDLE_BUSY + held.busy
-      const severity = level(steady && idle ? share : null)
-      active = severity !== null
+      const severity = levels.judge(steady && idle ? share : null)
       if (severity === null) return null
-      const demand = sum((s) => s.demand) / recent.length
+      const demand = sumOf(recent, (s) => s.demand) / recent.length
       const allowsText = rateText(allows)
       const which =
         overSeconds === LIMIT_TOO_TIGHT_SECONDS
@@ -857,15 +869,14 @@ export function goodputCollapseRule({ slots }: BackendSpec): Rule {
     // never collapsing, 60/s.
     { text: 'Try a shorter queue, so nothing waits longer than its caller will' },
     { text: 'Try a lower limit, so the Limiter turns away what the Backend cannot finish in time' },
+    // Listed last: the simulator cannot measure it, as its Backend never cancels work.
     {
       text: 'Try cancelling work whose caller has given up (not modelled here: the Backend always finishes what it starts)',
     },
   ]
 
-  /** Whether it is active after the last window, so its busy gate holds with a margin. */
-  let active = false
   /** The severity after a window at a ratio of the peak, given the one before. */
-  const level = createLevels({
+  const levels = createLevels({
     warn: GOODPUT_COLLAPSE_WARN_RATIO,
     broken: GOODPUT_COLLAPSE_BROKEN_RATIO,
     margin: GOODPUT_COLLAPSE_RATIO_MARGIN,
@@ -875,20 +886,19 @@ export function goodputCollapseRule({ slots }: BackendSpec): Rule {
   return {
     id: 'goodput-collapse',
     judge(window) {
-      const sum = (pick: (s: Snapshot) => number) => window.reduce((t, s) => t + pick(s), 0)
-      const goodput = sum((s) => s.goodput) / window.length
+      const goodput = sumOf(window, (s) => s.goodput) / window.length
       peak = Math.max(peak, goodput)
-      const busy = sum((s) => s.backendUtil) / window.length
+      const busy = sumOf(window, (s) => s.backendUtil) / window.length
       // With no Goodput yet there is nothing to have collapsed from.
-      const busyEnough = busy >= GOODPUT_COLLAPSE_BUSY - (active ? GOODPUT_COLLAPSE_BUSY_MARGIN : 0)
-      const severity = level(peak > 0 && busyEnough ? goodput / peak : null)
-      active = severity !== null
+      const margin = levels.active() ? GOODPUT_COLLAPSE_BUSY_MARGIN : 0
+      const busyEnough = busy >= GOODPUT_COLLAPSE_BUSY - margin
+      const severity = levels.judge(peak > 0 && busyEnough ? goodput / peak : null)
       if (severity === null) return null
       // Wasted Work as a share of busy slot time, both in slot ms; busy is 80% or more here. The
       // Backend books wasted time only on busy slots, over the same spans as busy time, so the
       // share cannot pass 1 but for float rounding in the two differences, which the cap absorbs.
-      const busySlotMs = sum((s) => s.backendUtil) * slots * SNAPSHOT_MS
-      const wastedShare = Math.min(1, sum((s) => s.wastedWorkMs) / busySlotMs)
+      const busySlotMs = sumOf(window, (s) => s.backendUtil) * slots * SNAPSHOT_MS
+      const wastedShare = Math.min(1, sumOf(window, (s) => s.wastedWorkMs) / busySlotMs)
       return {
         severity,
         evidence: [
@@ -924,11 +934,12 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
     // between the Clients (13.3/s each) also clears it, but Goodput falls to 25/s and limit too
     // tight fires, so the limit is kept whole for each.
     { text: 'Try a limit per Client, so one Client using up its limit cannot crowd out the rest' },
+    // Listed last: the simulator cannot measure it, as it has no fair queuing.
     { text: 'Try weighted fair queuing, so each Client gets its turn (not modelled here)' },
   ]
 
   /** The severity after a span where the others lost a share, given the one before. */
-  const level = createLevels({
+  const levels = createLevels({
     warn: NOISY_NEIGHBOR_WARN_REJECTED,
     broken: NOISY_NEIGHBOR_BROKEN_REJECTED,
     margin: NOISY_NEIGHBOR_REJECTED_MARGIN,
@@ -952,7 +963,7 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
       const [topEntry] = ranked
       const allowedAll = ranked.reduce((t, [, c]) => t + c.allowed, 0)
       if (topEntry === undefined || ranked.length < 2 || allowedAll === 0) {
-        level(null)
+        levels.judge(null)
         return null
       }
       const [top, topTotals] = topEntry
@@ -966,7 +977,7 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
       const othersRejected =
         othersOffered === 0 ? 0 : 1 - (allowedAll - topTotals.allowed) / othersOffered
       const crowded = topShare > NOISY_NEIGHBOR_TOP_SHARE && steady && othersPerSecond < othersFair
-      const severity = level(crowded ? othersRejected : null)
+      const severity = levels.judge(crowded ? othersRejected : null)
       if (severity === null) return null
       const limitText = rateText(limit)
       return {
