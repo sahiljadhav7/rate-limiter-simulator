@@ -32,7 +32,7 @@ export {
   type SlidingCounterSpec,
   type TokenBucketSpec,
 } from './limiter.ts'
-export { WARM_UP_MS, type Snapshot } from './metrics.ts'
+export { PERCENTILE_WINDOW_MS, SNAPSHOT_MS, WARM_UP_MS, type Snapshot } from './metrics.ts'
 export { checkRetryPolicy, type RetryPolicy } from './retry-policy.ts'
 export {
   createStreams,

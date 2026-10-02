@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import contextMd from '../CONTEXT.md?raw'
 import { SCENARIOS } from '../src/ui/scenarios/index.ts'
+import { GLOSSARY } from '../src/ui/notes/glossary.ts'
 import { firstNote, secondNote } from '../src/ui/notes/scenario-notes.ts'
 
 /**
@@ -60,5 +61,49 @@ describe('Scenario notes', () => {
     expect(secondNote(scenario)).toBe(
       `Models: ${scenario.models} Leaves out: ${scenario.leavesOut}`,
     )
+  })
+})
+
+describe('The glossary', () => {
+  // Every number a student reads in a panel, a node or a card (ticket 06).
+  it.each([
+    'Demand',
+    'Offered Load',
+    'Allowed',
+    'Rejected',
+    'Delayed',
+    'Goodput',
+    'Retry Amplification',
+    'Wasted Work',
+    'Busy',
+    'Most waiting',
+    'Lost',
+    'Shed',
+    'Timed out',
+    'p50, p95 and p99',
+    'Baseline p99',
+  ])('defines %s', (term) => {
+    expect(GLOSSARY.map((entry) => entry.term)).toContain(term)
+  })
+
+  // Sentence case: a capital after the first letter only in a term CONTEXT.md defines.
+  const contextTerms = [...contextMd.matchAll(/^\*\*(.+?)\*\*:/gm)].map(([, term]) => term)
+  it.each(GLOSSARY.map((entry) => entry.term))('%s is in sentence case', (term) => {
+    if (contextTerms.includes(term)) return
+    expect(term.slice(1)).not.toMatch(/[A-Z]/)
+  })
+
+  it.each(GLOSSARY.map((entry) => [entry.term, entry.definition] as const))(
+    '%s reads as plain sentences',
+    (_, definition) => {
+      expect(definition).toMatch(/^[A-Z]/)
+      expect(definition).toMatch(/\.$/)
+      expect(definition).not.toMatch(/—/)
+    },
+  )
+
+  it.each(AVOIDED)('never says %j', (word) => {
+    const text = GLOSSARY.map((entry) => `${entry.term} ${entry.definition}`).join(' ')
+    expect(text).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'))
   })
 })

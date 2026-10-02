@@ -29,3 +29,45 @@
 .note strong {
   font-weight: 700;
 }
+
+/*
+ * What the numbers mean: a native disclosure under the notes, its summary drawn as a button like
+ * the phone's More, opening to a definition list in the interface type (it is reference, not a
+ * handwritten note).
+ */
+.glossary > summary {
+  width: fit-content;
+  list-style: none;
+}
+
+.glossary > summary::-webkit-details-marker {
+  display: none;
+}
+
+.glossary > summary::after {
+  content: '▾';
+  color: var(--text-dim);
+}
+
+.glossary[open] > summary::after {
+  content: '▴';
+}
+
+.glossary-list {
+  display: grid;
+  gap: var(--sp-3);
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  letter-spacing: var(--tr-base);
+}
+
+.glossary-list dt {
+  font-weight: var(--fw-med);
+  color: var(--text);
+}
+
+.glossary-list dd {
+  margin: 0;
+  color: var(--text-dim);
+}
