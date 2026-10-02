@@ -3,6 +3,7 @@ import { createRunner } from '../src/runner/runner.ts'
 import type { Scenario } from '../src/runner/scenario.ts'
 import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
 import { noisyNeighborScenario } from '../src/ui/scenarios/noisy-neighbor.ts'
+import { retryStormScenario } from '../src/ui/scenarios/retry-storm.ts'
 import { withRetryMode, type RetryMode } from '../src/ui/controls/retry-options.ts'
 
 /** Run length for each row: long enough for many window edges and a settled 5 s loss share. */
@@ -71,14 +72,16 @@ const stormAndOverflow = {
  * Every Scenario at its default Demand and at 3x, as is and with each Retry Policy on every
  * Variant (seed as shipped, 120 s; .scratch/diagnosis/table-probe.ts,
  * .scratch/new-scenarios/noisy-retry.ts; Noisy neighbor's 2x to 4x tests,
- * .scratch/new-scenarios/noisy-probe.ts).
+ * .scratch/new-scenarios/noisy-probe.ts; Retry storm's, .scratch/new-scenarios/storm-scenario.ts).
  * Saturation fires in none of them: Backend overload's bursty traffic keeps the Backend under 26%
  * busy over 5 s, and Noisy neighbor's stays under 67%. So limit too loose, which needs a
  * saturated Backend, fires in none of them either, nor goodput collapse, which needs it at least
  * 80% busy. In Backend overload limit too tight and noisy neighbor fire in none: the bursts fill
  * at most 2 of every 10 seconds, so neither the Demand nor any one Client is over the limit
  * steadily. In Noisy neighbor limit too tight stays quiet as the Backend is about 50% busy, over
- * the 40% it needs; noisy neighbor fires only behind the limit shared by all.
+ * the 40% it needs; noisy neighbor fires only behind the limit shared by all. Retry storm has
+ * Backend overload's traffic and Backend behind its token bucket, which never overflows the
+ * queue there, so only a retry storm fires, and only where retries come at once.
  */
 const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 10, undefined, [none, none]],
@@ -106,6 +109,19 @@ const TABLE: readonly Row[] = [
   ['Noisy neighbor', noisyNeighborScenario, 60, 'backoff', [noisy, none]],
   ['Noisy neighbor', noisyNeighborScenario, 60, 'backoff-jitter', [noisy, none]],
   ['Noisy neighbor', noisyNeighborScenario, 60, 'retry-after', [noisy, none]],
+  ['Retry storm', retryStormScenario, 10, undefined, [none, none]],
+  ['Retry storm', retryStormScenario, 10, 'none', [none, none]],
+  ['Retry storm', retryStormScenario, 10, 'immediate', [none, none]],
+  ['Retry storm', retryStormScenario, 10, 'backoff', [none, none]],
+  ['Retry storm', retryStormScenario, 10, 'backoff-jitter', [none, none]],
+  ['Retry storm', retryStormScenario, 10, 'retry-after', [none, none]],
+  // As shipped: Retry at once storms, Back off is calm.
+  ['Retry storm', retryStormScenario, 30, undefined, [storm, none]],
+  ['Retry storm', retryStormScenario, 30, 'none', [none, none]],
+  ['Retry storm', retryStormScenario, 30, 'immediate', [storm, storm]],
+  ['Retry storm', retryStormScenario, 30, 'backoff', [none, none]],
+  ['Retry storm', retryStormScenario, 30, 'backoff-jitter', [none, none]],
+  ['Retry storm', retryStormScenario, 30, 'retry-after', [none, none]],
 ]
 
 describe('Scenario Findings table', () => {
@@ -165,4 +181,34 @@ describe('Scenario Findings table', () => {
       expect(perClient?.worst).toBe('none')
     },
   )
+
+  it.each([
+    [20, 'warn'],
+    [30, 'broken'],
+    [40, 'broken'],
+  ] as const)(
+    'Retry storm at %s/s (2x to 4x): retrying at once storms (worst %s), backing off never does',
+    (demandRps, worst) => {
+      const [atOnce, backOff] = worstFindings(retryStormScenario, demandRps)
+      expect(atOnce).toMatchObject({ worst, rootCauses: ['retry-storm'] })
+      expect(backOff?.worst).toBe('none')
+    },
+  )
+
+  it('Retry storm at 40/s: backing off finishes more Requests than retrying at once', () => {
+    // Goodput over 15 to 120 s: at once 15.6 to 15.8/s, backing off 19.7 to 19.8/s (seeds 1 to 8),
+    // so at least 1.25x on every seed.
+    const runner = createRunner(
+      { ...retryStormScenario, traffic: { ...retryStormScenario.traffic, demandRps: 40 } },
+      { eventBudget: Infinity },
+    )
+    while (runner.view().simMs < RUN_MS) runner.tick(100)
+    const [atOnce = 0, backOff = 0] = runner
+      .view()
+      .variants.map((v) =>
+        v.snapshots.filter((s) => s.t > 15_000).reduce((t, s) => t + s.goodput, 0),
+      )
+    expect(atOnce).toBeGreaterThan(0)
+    expect(backOff).toBeGreaterThan(atOnce * 1.2)
+  })
 })

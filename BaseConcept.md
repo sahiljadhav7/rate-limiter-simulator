@@ -35,6 +35,7 @@ A teaching tool, not a production limiter. Nothing real is sent over a network. 
 3. **Diagnosis card** (about 25 s): the app names the failure, shows the evidence numbers, and one click re-runs with the fix. *(Shipped 2026-10-01 without the click: Edge burst shows a boundary burst card on the fixed window (Root Cause, broken, 2.0×), Backend overload at 30/s a queue overflow card on the sliding window counter, and switching both to "Retry at once" adds a retry storm as the Root Cause. A click to apply the fix was built (RS-27) and removed on 2026-10-02 at the human's request: the card explains why it fails and lists the steps, with no button.)*
 
 The retry storm was demo item 2 until 2026-10-01; it is deferred to stretch (2026-10-01): measured in RS-12, immediate retry against backoff with jitter does not give "Goodput collapses in one Variant only". Once a Backend's full queue waits longer than the timeout, both Variants stay collapsed after the overload ends, and only no retry (or fewer Attempts, or a shorter queue) recovers. The current model does not reliably show the intended lesson, so it is not shipped as if ready; redesign its Variants from `tests/retry-storm.test.ts` first.
+  - *Note (2026-10-02):* built as the Retry storm Scenario (`.scratch/new-scenarios/issues/03-retry-storm-scenario.md`). The lesson is the storm and Goodput, not a collapse in one Variant: one token bucket (70/s, holding 10) on Backend overload's traffic, Retry at once against plain Back off. At 40/s retrying at once storms throughout while backing off never does and finishes more (19.7 to 19.8/s against 15.6 to 15.8/s). Plain backing off beat backing off with jitter in every case measured, so the retry storm card now suggests it first.
 
 ## Concepts to cover
 
@@ -52,7 +53,7 @@ The retry storm was demo item 2 until 2026-10-01; it is deferred to stretch (202
 4. **Burst tolerance**: token bucket vs leaky bucket under spiky traffic
 5. **Distributed limiter**: N nodes with local counters vs a shared counter; effective limit becomes N x limit
 6. **Rate limiting vs load shedding**: limiter on/off in front of an overloaded backend, comparing goodput and p99
-7. **Retry storm**: immediate retry vs exponential backoff with jitter *(stretch, RS-19c: deferred on 2026-10-01 because the current model does not reliably show its intended lesson; see RS-19c)*
+7. **Retry storm**: immediate retry vs exponential backoff *(stretch, RS-19c: deferred on 2026-10-01; built on 2026-10-02 with plain backoff, which beat backoff with jitter here; see RS-19c)*
 
 ## Tech stack
 
@@ -482,6 +483,7 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
 - **RS-20a Short explainer [Core]** (0.5h): a "what you're seeing and why" note and a "what this models / leaves out" note for the two core scenarios.
 - **RS-19b Remaining four scenarios [Stretch]** (1.5h): noisy neighbor, burst tolerance, distributed limiter, limiting vs load shedding.
 - **RS-19c Retry storm [Stretch]** (1h): deferred to stretch (2026-10-01): measured in RS-12, immediate retry against backoff with jitter does not give "Goodput collapses in one Variant only". Once a Backend's full queue waits longer than the timeout, both Variants stay collapsed after the overload ends, and only no retry (or fewer Attempts, or a shorter queue) recovers. The current model does not reliably show the intended lesson, so it is not shipped as if ready; redesign its Variants from `tests/retry-storm.test.ts` first.
+  - *Note (2026-10-02):* built as the Retry storm Scenario (`.scratch/new-scenarios/issues/03-retry-storm-scenario.md`). The lesson is the storm and Goodput, not a collapse in one Variant: one token bucket (70/s, holding 10) on Backend overload's traffic, Retry at once against plain Back off. At 40/s retrying at once storms throughout while backing off never does and finishes more (19.7 to 19.8/s against 15.6 to 15.8/s). Plain backing off beat backing off with jitter in every case measured, so the retry storm card now suggests it first.
 - **RS-20b Full explainers + glossary [Stretch]** (1h): notes for all scenarios and a plain-language definition for every metric (from the Metrics glossary above).
 
 ## Epic 5: Ship
