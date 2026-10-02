@@ -51,6 +51,9 @@
 
 .page {
   display: grid;
+  /* minmax(0, 1fr), not the implicit auto column, which grows to its widest child's minimum
+     content: at 375px that made the page 396px wide and scroll sideways. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-3);
   padding: var(--sp-3);
 }

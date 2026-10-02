@@ -10,6 +10,8 @@
    * its own.
    */
   flex: 1 1 0;
+  /* Border box, so 100% includes the padding and border and never overflows a phone screen. */
+  box-sizing: border-box;
   min-width: min(100%, 320px);
 }
 
@@ -93,6 +95,17 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
+}
+
+/* On a phone the track wraps under the readout and takes the full width, so it never overflows. */
+@media (max-width: 639px) {
+  .demand {
+    flex-wrap: wrap;
+  }
+
+  .demand-track {
+    flex: 1 1 100%;
+  }
 }
 
 .demand-readout {
