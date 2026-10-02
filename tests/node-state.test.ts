@@ -51,12 +51,12 @@ describe('nodeState', () => {
     })
   })
 
-  it('puts a boundary burst on the Limiter and a retry storm on the Clients', () => {
+  it('puts a limit too tight on the Limiter and a retry storm on the Clients', () => {
     const cause = (id: Finding['id']): Finding => ({ ...overflow('warn'), id, kind: 'cause' })
-    expect(nodeState([cause('boundary-burst')], 'limiter').severity).toBe('warn')
+    expect(nodeState([cause('limit-too-tight')], 'limiter').severity).toBe('warn')
     expect(nodeState([cause('retry-storm')], 'client').severity).toBe('warn')
     expect(
-      nodeState([cause('boundary-burst'), cause('retry-storm')], 'backend').severity,
+      nodeState([cause('limit-too-tight'), cause('retry-storm')], 'backend').severity,
     ).toBeNull()
   })
 })

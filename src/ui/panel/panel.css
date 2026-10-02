@@ -68,7 +68,7 @@
   color: var(--text-dim);
 }
 
-/* The boundary-burst row of a Limiter without a window: a line of text in the chart's place. */
+/* The window chart's row for a Limiter without a window: a line of text in the chart's place. */
 .chart-none p {
   margin: var(--sp-1) 0 0;
   max-width: 40ch;

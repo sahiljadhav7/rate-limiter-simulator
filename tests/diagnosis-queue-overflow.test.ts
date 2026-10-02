@@ -34,7 +34,7 @@ describe('the queue overflow rule', () => {
   })
 
   it.each([
-    [1, 'healthy'], // 0.1%: fixed window at its calm default
+    [1, 'healthy'], // 0.1%: a calm Backend at its default
     [20, 'warn'], // 2%
     [60, 'broken'], // 6%
   ])('with %s of 1,000 allowed lost each second, the Backend is %s', (shed, severity) => {

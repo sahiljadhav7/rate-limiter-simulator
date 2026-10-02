@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { createRunner } from '../src/runner/runner.ts'
 import type { Scenario } from '../src/runner/scenario.ts'
 import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
-import { edgeBurstScenario } from '../src/ui/scenarios/edge-burst.ts'
 import { withRetryMode, type RetryMode } from '../src/ui/controls/retry-options.ts'
 
 /** Run length for each row: long enough for many window edges and a settled 5 s loss share. */
@@ -56,33 +55,9 @@ type Row = readonly [
 
 const none = { modes: {}, roots: [] }
 const overflow = { modes: { 'queue-overflow': 'broken' }, roots: ['queue-overflow'] }
-const burst = { modes: { 'boundary-burst': 'broken' }, roots: ['boundary-burst'] }
 const storm = { modes: { 'retry-storm': 'broken' }, roots: ['retry-storm'] }
 const stormAndOverflow = {
   modes: { 'retry-storm': 'broken', 'queue-overflow': 'broken' },
-  roots: ['retry-storm'],
-}
-// The first burst's rejected half retries at once, inside the first full window, so the storm
-// starts a second before the boundary burst and is the earlier Cause (D6).
-const stormAndBurst = {
-  modes: { 'retry-storm': 'broken', 'boundary-burst': 'broken' },
-  roots: ['retry-storm'],
-}
-// Edge burst at 3x: background Demand of 12/s is over the limit of 10/s in nearly every second,
-// so limit too tight fires from 15 s (.scratch/more-rules/spec.md "Measured"). It starts after
-// the boundary burst and the retry storm, so they keep Root Cause; behind the sliding window
-// counter, with nothing else wrong, it is the Root Cause.
-const tight = { modes: { 'limit-too-tight': 'broken' }, roots: ['limit-too-tight'] }
-const burstAndTight = {
-  modes: { 'boundary-burst': 'broken', 'limit-too-tight': 'broken' },
-  roots: ['boundary-burst'],
-}
-const stormBurstAndTight = {
-  modes: { 'retry-storm': 'broken', 'boundary-burst': 'broken', 'limit-too-tight': 'broken' },
-  roots: ['retry-storm'],
-}
-const stormAndTight = {
-  modes: { 'retry-storm': 'broken', 'limit-too-tight': 'broken' },
   roots: ['retry-storm'],
 }
 
@@ -91,8 +66,9 @@ const stormAndTight = {
  * Variant (seed as shipped, 120 s; .scratch/diagnosis/table-probe.ts).
  * Saturation fires in none of them: bursty traffic keeps the Backend under 26% busy over 5 s.
  * So limit too loose, which needs a saturated Backend, fires in none of them either, nor goodput
- * collapse, which needs it at least 80% busy. Noisy neighbor fires in none: Edge burst's bursts
- * all come from one Client, but it is never over its fair share for 10 seconds running.
+ * collapse, which needs it at least 80% busy. Limit too tight and noisy neighbor fire in none:
+ * the bursts fill at most 2 of every 10 seconds, so neither the Demand nor any one Client is over
+ * the limit steadily.
  */
 const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 10, undefined, [none, none]],
@@ -108,18 +84,6 @@ const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 30, 'retry-after', [overflow, none]],
   // Fixed window first: a boundary burst at every Edge Burst, the Root Cause. The sliding
   // window counter has no window edge reset, and the Backend copes with what it allows.
-  ['Edge burst', edgeBurstScenario, 4, undefined, [burst, none]],
-  ['Edge burst', edgeBurstScenario, 4, 'immediate', [stormAndBurst, storm]],
-  ['Edge burst', edgeBurstScenario, 4, 'backoff', [burst, none]],
-  ['Edge burst', edgeBurstScenario, 4, 'backoff-jitter', [burst, none]],
-  ['Edge burst', edgeBurstScenario, 4, 'retry-after', [burst, none]],
-  ['Edge burst', edgeBurstScenario, 12, undefined, [burstAndTight, tight]],
-  ['Edge burst', edgeBurstScenario, 12, 'immediate', [stormBurstAndTight, stormAndTight]],
-  ['Edge burst', edgeBurstScenario, 12, 'backoff', [burstAndTight, tight]],
-  ['Edge burst', edgeBurstScenario, 12, 'backoff-jitter', [burstAndTight, tight]],
-  // Retries wait for the next window edge and fill the fixed window at its start, so nothing is
-  // let through just before an edge: no boundary burst, and limit too tight is the Root Cause.
-  ['Edge burst', edgeBurstScenario, 12, 'retry-after', [tight, tight]],
 ]
 
 describe('Scenario Findings table', () => {

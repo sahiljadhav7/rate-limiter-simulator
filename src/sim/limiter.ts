@@ -28,19 +28,6 @@ export interface Limiter {
 export type KeyBy = 'global' | 'client'
 
 /**
- * Fixed window: each key may have `limit` Attempts allowed per window. Windows start at 0,
- * so window k covers [k x windowMs, (k + 1) x windowMs) for every key and every Variant.
- */
-export interface FixedWindowSpec {
-  readonly algo: 'fixed-window'
-  readonly keyBy: KeyBy
-  /** Attempts allowed per window, per key: a whole number, 1 or more. */
-  readonly limit: number
-  /** The window length, in ms. */
-  readonly windowMs: number
-}
-
-/**
  * Token bucket: each key has a bucket of `capacity` tokens, full at the start, that refills
  * continuously at `refillPerSec` up to `capacity`. An Attempt takes one token, or is rejected
  * when there is not a whole one. A quiet key can spend a full bucket at once, so it allows
@@ -57,7 +44,8 @@ export interface TokenBucketSpec {
 
 /**
  * Sliding window counter: each key may have about `limit` Attempts allowed per window-length,
- * estimated from two fixed windows (the same edges as fixed window). `e` ms into a window, the
+ * estimated from the counts of two windows back to back. Windows start at 0, so window k covers
+ * [k x windowMs, (k + 1) x windowMs) for every key and every Variant. `e` ms into a window, the
  * estimate is prev x (1 - e / windowMs) + curr: all of this window's count, and the part of
  * the previous window's count that still overlaps, as if its Attempts were spread evenly. An
  * Attempt is allowed when the estimate plus it is `limit` or less.
@@ -72,15 +60,14 @@ export interface SlidingCounterSpec {
 }
 
 /** What a Variant's Limiter is built from. Each algorithm adds its own member. */
-export type LimiterSpec = FixedWindowSpec | TokenBucketSpec | SlidingCounterSpec
+export type LimiterSpec = TokenBucketSpec | SlidingCounterSpec
 
 /**
  * The window a Limiter counts Attempts in, with its limit, or null for one without a window
- * (token bucket). The boundary-burst chart is drawn only for a Limiter with a window.
+ * (token bucket). The chart of the last window's count is drawn only for a Limiter with a window.
  */
 export function limiterWindow(spec: LimiterSpec): { limit: number; windowMs: number } | null {
   switch (spec.algo) {
-    case 'fixed-window':
     case 'sliding-counter':
       return { limit: spec.limit, windowMs: spec.windowMs }
     case 'token-bucket':
@@ -91,7 +78,6 @@ export function limiterWindow(spec: LimiterSpec): { limit: number; windowMs: num
 /** The Attempts a Limiter allows per second in the long run, per key. */
 export function allowedPerSecond(spec: LimiterSpec): number {
   switch (spec.algo) {
-    case 'fixed-window':
     case 'sliding-counter':
       return (spec.limit * 1000) / spec.windowMs
     case 'token-bucket':
@@ -107,42 +93,10 @@ function keyFor(keyBy: KeyBy, clientId: ClientId): string {
 /** Creates the Limiter `spec` describes. */
 export function createLimiter(spec: LimiterSpec): Limiter {
   switch (spec.algo) {
-    case 'fixed-window':
-      return createFixedWindow(spec)
     case 'token-bucket':
       return createTokenBucket(spec)
     case 'sliding-counter':
       return createSlidingCounter(spec)
-  }
-}
-
-function createFixedWindow(spec: FixedWindowSpec): Limiter {
-  const { keyBy, limit, windowMs } = spec
-  checkWholeNumber(limit, 1, "A fixed window's limit")
-  checkPositive(windowMs, "A fixed window's length in ms")
-  /** Per key: the window its count belongs to, and the Attempts allowed in it. */
-  const counts = new Map<string, { window: number; allowed: number }>()
-  return {
-    decide(clientId, nowMs) {
-      const window = bucketAt(nowMs, windowMs)
-      const key = keyFor(keyBy, clientId)
-      let entry = counts.get(key)
-      if (entry === undefined) {
-        entry = { window, allowed: 0 }
-        counts.set(key, entry)
-      } else if (entry.window !== window) {
-        entry.window = window
-        entry.allowed = 0
-      }
-      if (entry.allowed >= limit) {
-        return { kind: 'reject', retryAfterMs: bucketStart(window + 1, windowMs) - nowMs }
-      }
-      entry.allowed++
-      return { kind: 'allow' }
-    },
-    reset() {
-      counts.clear()
-    },
   }
 }
 

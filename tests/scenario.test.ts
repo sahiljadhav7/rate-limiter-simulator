@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { checkScenario, subBucketMsFor, type Scenario } from '../src/runner/scenario.ts'
 
 const scenario: Scenario = {
-  id: 'edge-burst',
-  title: 'Edge burst',
-  lesson: 'Watch the fixed window let through twice its limit across the edge.',
+  id: 'scenario-test',
+  title: 'Scenario test',
+  lesson: 'Watch the two Limiters pace the same traffic differently.',
   why: 'The counter resets at the edge, so a burst on either side gets two windows of room.',
   models: 'One global Limiter in front of one Backend.',
   leavesOut: 'Network latency and more than one Limiter node.',
@@ -18,8 +18,8 @@ const scenario: Scenario = {
   backend: { slots: 4, queueLimit: 10, meanMs: 50, cv: 1 },
   variants: [
     {
-      label: 'Fixed window',
-      limiter: { algo: 'fixed-window', keyBy: 'global', limit: 10, windowMs: 1000 },
+      label: 'Token bucket',
+      limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 10, refillPerSec: 10 },
       retry: { timeoutMs: 500, maxAttempts: 1, retry: 'none' },
     },
     {
@@ -61,7 +61,7 @@ describe('checkScenario', () => {
           {
             ...variant,
             label: 'B',
-            limiter: { algo: 'fixed-window', keyBy: 'global', limit: 0, windowMs: 1000 },
+            limiter: { algo: 'sliding-counter', keyBy: 'global', limit: 0, windowMs: 1000 },
           },
         ],
       },
@@ -107,9 +107,9 @@ describe('checkScenario', () => {
 })
 
 describe('subBucketMsFor', () => {
-  it('is a tenth of the window for fixed window and sliding counter', () => {
+  it('is a tenth of the window for sliding counter', () => {
     expect(
-      subBucketMsFor({ algo: 'fixed-window', keyBy: 'global', limit: 5, windowMs: 1000 }),
+      subBucketMsFor({ algo: 'sliding-counter', keyBy: 'global', limit: 5, windowMs: 1000 }),
     ).toBe(100)
     expect(
       subBucketMsFor({ algo: 'sliding-counter', keyBy: 'client', limit: 5, windowMs: 500 }),
@@ -117,9 +117,9 @@ describe('subBucketMsFor', () => {
   })
 
   it('is a tenth of a window that is not a whole number of ms', () => {
-    expect(subBucketMsFor({ algo: 'fixed-window', keyBy: 'global', limit: 5, windowMs: 333 })).toBe(
-      33.3,
-    )
+    expect(
+      subBucketMsFor({ algo: 'sliding-counter', keyBy: 'global', limit: 5, windowMs: 333 }),
+    ).toBe(33.3)
     expect(
       subBucketMsFor({ algo: 'sliding-counter', keyBy: 'global', limit: 5, windowMs: 2.5 }),
     ).toBe(0.25)

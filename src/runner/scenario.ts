@@ -54,7 +54,7 @@ export interface Scenario {
   readonly traffic: TrafficSpec
   /** Load changes the Scenario makes on its own, in time order. */
   readonly controls?: readonly ControlEvent[]
-  /** Requests at exact times, such as an Edge Burst (D12). */
+  /** Requests at exact times, such as a burst timed to a window edge (D12). */
   readonly scriptedArrivals?: readonly ScriptedArrivals[]
   readonly backend: BackendSpec
   /** One to three. */

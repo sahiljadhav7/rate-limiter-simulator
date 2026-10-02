@@ -30,10 +30,6 @@ _Avoid_: user, tenant, caller, consumer
 The rule deciding whether and when a Request makes another Attempt after one is rejected, times out, or is shed. One Retry Policy applies to every Client in a Variant.
 _Avoid_: client policy, backoff strategy
 
-**Edge Burst**:
-Traffic deliberately timed to straddle a fixed window's boundary, so a fixed-window Limiter admits up to twice its limit within one window-length.
-_Avoid_: boundary spike
-
 ## Limiting
 
 **Limiter Decision**:
@@ -92,7 +88,7 @@ Any Request that ended Rejected, Timed out, or Shed.
 ## Diagnosis
 
 **Failure Mode**:
-A named way the simulated system goes wrong, such as a retry storm or an Edge Burst over-admit. Each is either a Cause or a Symptom.
+A named way the simulated system goes wrong, such as a retry storm or a queue overflow. Each is either a Cause or a Symptom.
 
 **Cause**:
 A Failure Mode that describes a design mistake, such as a missing backoff or a limit set too loose.

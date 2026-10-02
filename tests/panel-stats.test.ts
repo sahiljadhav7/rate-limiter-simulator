@@ -11,8 +11,8 @@ import { snapshotAt } from './snapshots.ts'
 
 const snapshot = snapshotAt
 
-const fixedWindow: LimiterSpec = {
-  algo: 'fixed-window',
+const slidingCounter: LimiterSpec = {
+  algo: 'sliding-counter',
   keyBy: 'global',
   limit: 10,
   windowMs: 1000,
@@ -70,7 +70,7 @@ describe('panelStats', () => {
   ]
 
   it('averages over the last 5 Snapshots, and reads p99 and waiting from the newest', () => {
-    expect(panelStats(snapshots, fixedWindow, 3)).toEqual({
+    expect(panelStats(snapshots, slidingCounter, 3)).toEqual({
       demand: 10, // (10 + 10 + 12 + 8 + 10) / 5
       offeredLoad: 12, // (12 + 14 + 16 + 8 + 10) / 5
       goodput: 8.4, // (9 + 10 + 10 + 8 + 5) / 5
@@ -85,24 +85,24 @@ describe('panelStats', () => {
   })
 
   it('averages over the Snapshots there are when there are fewer than 5', () => {
-    const stats = panelStats(snapshots.slice(2, 5), fixedWindow, 3)
+    const stats = panelStats(snapshots.slice(2, 5), slidingCounter, 3)
     expect(stats.offeredLoad).toBe(14) // (12 + 14 + 16) / 3
     expect(stats.rejectedShare).toBeCloseTo(0.2857, 4) // (2 + 4 + 6) / (12 + 14 + 16) = 12 / 42
   })
 
   it('gives null for everything before the first Snapshot, never 0', () => {
-    expect(Object.values(panelStats([], fixedWindow, 3)).every((v) => v === null)).toBe(true)
+    expect(Object.values(panelStats([], slidingCounter, 3)).every((v) => v === null)).toBe(true)
   })
 
   it('gives null Rejected share when nothing was offered, rather than 0% or NaN', () => {
-    const quiet = panelStats([snapshot(1000), snapshot(2000)], fixedWindow, 3)
+    const quiet = panelStats([snapshot(1000), snapshot(2000)], slidingCounter, 3)
     expect(quiet.rejectedShare).toBeNull()
     expect(quiet.offeredLoad).toBe(0)
     expect(quiet.p99).toBeNull()
   })
 
   it('clamps the meters to 0 to 1', () => {
-    const over = panelStats([snapshot(1000, { allowed: 25, backendUtil: 1 })], fixedWindow, 3)
+    const over = panelStats([snapshot(1000, { allowed: 25, backendUtil: 1 })], slidingCounter, 3)
     expect(over.limiterMeter).toBe(1)
     expect(over.backendMeter).toBe(1)
   })
@@ -110,8 +110,8 @@ describe('panelStats', () => {
 
 describe('limiterCapacity', () => {
   it('is the long-run rate per key, times the Clients when each Client has its own key', () => {
-    expect(limiterCapacity(fixedWindow, 3)).toBe(10)
-    expect(limiterCapacity({ ...fixedWindow, keyBy: 'client' }, 3)).toBe(30)
+    expect(limiterCapacity(slidingCounter, 3)).toBe(10)
+    expect(limiterCapacity({ ...slidingCounter, keyBy: 'client' }, 3)).toBe(30)
     expect(
       limiterCapacity({ algo: 'token-bucket', keyBy: 'client', capacity: 20, refillPerSec: 4 }, 3),
     ).toBe(12)

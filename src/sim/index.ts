@@ -25,7 +25,6 @@ export {
   allowedPerSecond,
   createLimiter,
   limiterWindow,
-  type FixedWindowSpec,
   type KeyBy,
   type Limiter,
   type LimiterDecision,

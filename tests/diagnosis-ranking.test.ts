@@ -13,7 +13,7 @@ import type { LimiterSpec } from '../src/sim/limiter.ts'
 import { snapshotAt } from './snapshots.ts'
 
 const backend: BackendSpec = { slots: 4, queueLimit: 20, meanMs: 100, cv: 1 }
-const limiter: LimiterSpec = { algo: 'fixed-window', keyBy: 'global', limit: 10, windowMs: 1000 }
+const limiter: LimiterSpec = { algo: 'sliding-counter', keyBy: 'global', limit: 10, windowMs: 1000 }
 const allowed: AllowedSubBuckets = { bucketMs: 100, counts: [] }
 
 const snapshot = snapshotAt
@@ -52,12 +52,12 @@ describe('ranking Findings (D6)', () => {
       [
         scripted('queue-overflow', [0, 99_000]),
         scripted('saturation', [0, 99_000]),
-        scripted('boundary-burst', [14_000, 99_000]),
+        scripted('limit-too-tight', [14_000, 99_000]),
       ],
       16,
     )
     expect(roles(diagnoser)).toEqual([
-      ['boundary-burst', 'root-cause', 'cause'],
+      ['limit-too-tight', 'root-cause', 'cause'],
       ['saturation', 'contributing', 'symptom'],
       ['queue-overflow', 'contributing', 'symptom'],
     ])
@@ -65,12 +65,12 @@ describe('ranking Findings (D6)', () => {
 
   it('of two Causes, the one that started earlier is the Root Cause, whatever the rule order', () => {
     const diagnoser = run(
-      [scripted('boundary-burst', [14_000, 99_000]), scripted('retry-storm', [12_000, 99_000])],
+      [scripted('limit-too-tight', [14_000, 99_000]), scripted('retry-storm', [12_000, 99_000])],
       16,
     )
     expect(roles(diagnoser)).toEqual([
       ['retry-storm', 'root-cause', 'cause'],
-      ['boundary-burst', 'contributing', 'cause'],
+      ['limit-too-tight', 'contributing', 'cause'],
     ])
     expect(diagnoser.findings().map((f) => f.startedAt)).toEqual([12_000, 14_000])
   })
@@ -95,13 +95,13 @@ describe('ranking Findings (D6)', () => {
 
   it('labels each Failure Mode from one table', () => {
     const diagnoser = run(
-      (['queue-overflow', 'saturation', 'boundary-burst', 'retry-storm'] as const).map((id) =>
+      (['queue-overflow', 'saturation', 'limit-too-tight', 'retry-storm'] as const).map((id) =>
         scripted(id, [0, 99_000]),
       ),
       10,
     )
     expect(diagnoser.findings().map((f) => f.label)).toEqual([
-      'Boundary burst',
+      'Limit too tight',
       'Retry storm',
       'Backend saturation',
       'Queue overflow',

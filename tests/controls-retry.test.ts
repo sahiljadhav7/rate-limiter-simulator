@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { withRetryMode, withVariantRetry } from '../src/ui/controls/retry-options.ts'
 import { checkRetryPolicy, type RetryPolicy } from '../src/sim/index.ts'
-import { edgeBurstScenario } from '../src/ui/scenarios/edge-burst.ts'
+import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
 
 const none: RetryPolicy = { timeoutMs: 1000, maxAttempts: 1, retry: 'none' }
 
@@ -47,9 +47,9 @@ describe('withRetryMode', () => {
 describe('withVariantRetry', () => {
   it('changes only that Variant', () => {
     const policy = withRetryMode(none, 'immediate')
-    const edited = withVariantRetry(edgeBurstScenario, 1, policy)
+    const edited = withVariantRetry(backendOverloadScenario, 1, policy)
     expect(edited.variants[1]?.retry).toEqual(policy)
-    expect(edited.variants[0]).toBe(edgeBurstScenario.variants[0])
-    expect({ ...edited, variants: [] }).toEqual({ ...edgeBurstScenario, variants: [] })
+    expect(edited.variants[0]).toBe(backendOverloadScenario.variants[0])
+    expect({ ...edited, variants: [] }).toEqual({ ...backendOverloadScenario, variants: [] })
   })
 })

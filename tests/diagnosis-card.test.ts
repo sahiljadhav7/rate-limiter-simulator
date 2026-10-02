@@ -58,6 +58,6 @@ describe('announcement', () => {
 
 describe('findingAnchorId', () => {
   it("joins the panel's id and the Failure Mode, one card per mode in a panel", () => {
-    expect(findingAnchorId(':r1:', 'boundary-burst')).toBe(':r1:-boundary-burst')
+    expect(findingAnchorId(':r1:', 'limit-too-tight')).toBe(':r1:-limit-too-tight')
   })
 })

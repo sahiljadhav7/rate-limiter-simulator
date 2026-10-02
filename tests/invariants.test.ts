@@ -48,7 +48,6 @@ const traffic = (shape: TrafficShape, demandRps = 150): TrafficSpec => ({
 
 /** The same long-run rate, 120 per second, for every algorithm. */
 const LIMITERS: Record<string, LimiterSpec> = {
-  'fixed window': { algo: 'fixed-window', keyBy: 'global', limit: 60, windowMs: 500 },
   'token bucket': { algo: 'token-bucket', keyBy: 'global', capacity: 60, refillPerSec: 120 },
   'sliding counter': { algo: 'sliding-counter', keyBy: 'global', limit: 60, windowMs: 500 },
 }
@@ -308,13 +307,13 @@ describe('every Limiter, Retry Policy and traffic shape', () => {
   })
 
   it('is not vacuous run by run: most runs see every way a Request can end', () => {
-    // Measured (seed 7): 44 of 45. The exception, fixed window with immediate retry and bursty
-    // traffic, has no timeouts.
+    // Measured (seed 7): 30 of 30, since fixed window (whose run with immediate retry and bursty
+    // traffic had no timeouts) left the project.
     const everyEnding = MATRIX.filter((entry) => {
       const { succeeded, rejected, timedOut, shed } = checkedRun(entry).engine.totals().requests
       return Math.min(succeeded, rejected, timedOut, shed) > 0
     })
-    expect(everyEnding.length).toBeGreaterThanOrEqual(40)
+    expect(everyEnding.length).toBeGreaterThanOrEqual(27)
   })
 })
 

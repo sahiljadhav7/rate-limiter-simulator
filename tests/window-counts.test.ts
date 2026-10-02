@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createRunner } from '../src/runner/runner.ts'
 import type { Scenario } from '../src/runner/scenario.ts'
+import type { LimiterSpec } from '../src/sim/limiter.ts'
 import { rollingWindowCounts } from '../src/sim/window-counts.ts'
 
 describe('rollingWindowCounts', () => {
@@ -46,7 +47,7 @@ describe('rollingWindowCounts', () => {
 
   // The Edge Burst from tests/limiters.test.ts, through the runner: 30 Requests at 950 ms and
   // 30 at 1050 ms, a limit of 10 per 1000 ms window, no other traffic.
-  const edgeBurst = (algo: 'fixed-window' | 'sliding-counter'): Scenario => ({
+  const edgeBurst = (limiter: LimiterSpec): Scenario => ({
     id: 'edge',
     title: 'Edge Burst',
     lesson: '',
@@ -62,18 +63,23 @@ describe('rollingWindowCounts', () => {
     backend: { slots: 10, queueLimit: 100, meanMs: 10, cv: 0 },
     variants: [
       {
-        label: algo,
-        limiter: { algo, keyBy: 'global', limit: 10, windowMs: 1000 },
+        label: limiter.algo,
+        limiter,
         retry: { timeoutMs: 1000, maxAttempts: 1, retry: 'none' },
       },
     ],
   })
 
-  it.each([
-    ['fixed-window', 20],
-    ['sliding-counter', 10],
-  ] as const)('peaks at the Edge Burst count for %s: %s', (algo, peak) => {
-    const runner = createRunner(edgeBurst(algo))
+  it.each<[string, LimiterSpec, number]>([
+    [
+      'sliding window counter',
+      { algo: 'sliding-counter', keyBy: 'global', limit: 10, windowMs: 1000 },
+      10,
+    ],
+    // 10 tokens at 950 ms, and one back by 1050 ms.
+    ['token bucket', { algo: 'token-bucket', keyBy: 'global', capacity: 10, refillPerSec: 10 }, 11],
+  ])('peaks at the Edge Burst count for %s: %s', (_, limiter, peak) => {
+    const runner = createRunner(edgeBurst(limiter))
     for (let i = 0; i < 30; i++) runner.tick(100)
     const subBuckets = runner.view().variants[0]?.allowedSubBuckets
     if (subBuckets === undefined) throw new Error('no Variant')

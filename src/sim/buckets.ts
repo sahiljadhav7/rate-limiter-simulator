@@ -1,5 +1,5 @@
 /**
- * Time cut into equal buckets that repeat from an origin: fixed windows, bursty on/off cycles
+ * Time cut into equal buckets that repeat from an origin: a Limiter's windows, bursty on/off cycles
  * and the allowed-Attempt sub-buckets. Bucket k covers [start(k), start(k + 1)), half-open.
  *
  * Every edge comes from `bucketStart`, and `bucketAt` checks against those same edges. Working

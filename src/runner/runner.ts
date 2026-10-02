@@ -62,7 +62,7 @@ export interface VariantView {
   /** One per whole simulated second so far, oldest first. */
   readonly snapshots: readonly Snapshot[]
   readonly totals: Totals
-  /** Allowed Attempts per tenth of a window, for the boundary-burst chart (D5). */
+  /** Allowed Attempts per tenth of a window, for the chart of the last window's count (D5). */
   readonly allowedSubBuckets: AllowedSubBuckets
   /** What diagnosis finds after the newest Snapshot, the Root Cause first. */
   readonly findings: readonly Finding[]

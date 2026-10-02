@@ -2,14 +2,12 @@ import type { KeyBy, LimiterSpec } from '../../sim/index.ts'
 
 /** Each Limiter algorithm's name, as the panel's pill and text use it. */
 export const ALGORITHM_NAMES: Readonly<Record<LimiterSpec['algo'], string>> = {
-  'fixed-window': 'Fixed window',
   'token-bucket': 'Token bucket',
   'sliding-counter': 'Sliding window counter',
 }
 
 /** Each algorithm's name short enough for a phone's tab (spec decision 9 of .scratch/polish/). */
 export const SHORT_ALGORITHM_NAMES: Readonly<Record<LimiterSpec['algo'], string>> = {
-  'fixed-window': 'Fixed window',
   'token-bucket': 'Token bucket',
   'sliding-counter': 'Sliding window',
 }

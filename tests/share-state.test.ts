@@ -11,7 +11,18 @@ import { parseShareState, shareUrl } from '../src/ui/share/url-state.ts'
 
 const BASE = 'https://ratescale.example/'
 const first = SCENARIOS[0]
-const second = SCENARIOS[1]!
+/**
+ * A second Scenario, so picking one by its id is tested though the app ships only one. A
+ * different seed and Demand, so taking the first by mistake would show.
+ */
+const second: Scenario = {
+  ...first,
+  id: 'second',
+  title: 'Second',
+  seed: 9,
+  traffic: { ...first.traffic, demandRps: 25 },
+}
+const TWO = [first, second] as const
 
 /** `scenario` with Variant i switched to `modes[i]`, as the dropdown would do it. */
 function withModes(scenario: Scenario, modes: readonly RetryMode[]): Scenario {
@@ -74,14 +85,14 @@ describe('parseShareState falls back field by field', () => {
   })
 
   it('picks the Scenario named by s', () => {
-    expect(parseShareState(`?s=${second.id}`, SCENARIOS)).toEqual({
+    expect(parseShareState(`?s=${second.id}`, TWO)).toEqual({
       scenario: second,
       demandRps: second.traffic.demandRps,
     })
   })
 
   it.each(['-1', '1.5', 'abc', '', '4294967296', '1e3'])('ignores the seed %j', (seed) => {
-    const { scenario, demandRps } = parseShareState(`?s=${second.id}&seed=${seed}&d=7`, SCENARIOS)
+    const { scenario, demandRps } = parseShareState(`?s=${second.id}&seed=${seed}&d=7`, TWO)
     expect(scenario.seed).toBe(second.seed)
     expect(demandRps).toBe(7)
   })

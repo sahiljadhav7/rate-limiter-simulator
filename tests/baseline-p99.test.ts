@@ -3,7 +3,6 @@ import { baselineP99Ms } from '../src/sim/baseline.ts'
 import { serviceTimeMs, type BackendSpec } from '../src/sim/backend.ts'
 import { createRandomStream } from '../src/sim/rng.ts'
 import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
-import { edgeBurstScenario } from '../src/ui/scenarios/edge-burst.ts'
 
 const spec = (meanMs: number, cv: number): BackendSpec => ({ slots: 4, queueLimit: 20, meanMs, cv })
 
@@ -35,7 +34,7 @@ describe('baselineP99Ms', () => {
   it("gives each Scenario's Backend its baseline, as the Why texts quote it", () => {
     // Backend overload: 50 ms, cv 0.5 (gamma with shape 4 and scale 12.5; the chi-square table gives 20.09 / 2 x 12.5).
     expect(baselineP99Ms(backendOverloadScenario.backend)).toBeCloseTo(125.6, 1)
-    // Edge burst: 50 ms, cv 1: 50 x ln 100.
-    expect(baselineP99Ms(edgeBurstScenario.backend)).toBeCloseTo(230.3, 1)
+    // 50 ms, cv 1, as the saturation fixture: 50 x ln 100.
+    expect(baselineP99Ms({ slots: 4, queueLimit: 40, meanMs: 50, cv: 1 })).toBeCloseTo(230.3, 1)
   })
 })

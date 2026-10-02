@@ -34,8 +34,9 @@ const scenario: Scenario = {
   backend: { slots: 4, queueLimit: 20, meanMs: 40, cv: 1 },
   variants: [
     {
-      label: 'Fixed window',
-      limiter: { algo: 'fixed-window', keyBy: 'global', limit: 60, windowMs: 500 },
+      label: 'Sliding counter, short window',
+      // The same 120 per second as the third, over half the window, so the two differ.
+      limiter: { algo: 'sliding-counter', keyBy: 'global', limit: 30, windowMs: 250 },
       retry: { timeoutMs: 150, maxAttempts: 3, retry: 'immediate' },
     },
     {
@@ -114,12 +115,12 @@ describe('createRunner', () => {
     const view = createRunner(scenario, UNLIMITED).view()
     expect(view).toMatchObject({ simMs: 0, paused: false, speed: 1, behind: false })
     expect(view.variants.map((variant) => variant.label)).toEqual([
-      'Fixed window',
+      'Sliding counter, short window',
       'Token bucket',
       'Sliding counter',
     ])
     expect(view.variants.map((variant) => variant.allowedSubBuckets.bucketMs)).toEqual([
-      50, 100, 50,
+      25, 100, 50,
     ])
   })
 

@@ -17,12 +17,6 @@ describe('shortNames', () => {
   it('names each Variant by its algorithm, shortened for a phone tab', () => {
     expect(
       shortNames([
-        variant('Fixed window', {
-          algo: 'fixed-window',
-          keyBy: 'global',
-          limit: 70,
-          windowMs: 1000,
-        }),
         variant('Sliding window counter', {
           algo: 'sliding-counter',
           keyBy: 'global',
@@ -31,7 +25,7 @@ describe('shortNames', () => {
         }),
         variant('Token bucket', tokenBucket('global')),
       ]),
-    ).toEqual(['Fixed window', 'Sliding window', 'Token bucket'])
+    ).toEqual(['Sliding window', 'Token bucket'])
   })
 
   it('adds the key scope to both when two Variants share an algorithm', () => {

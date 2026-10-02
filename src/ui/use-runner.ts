@@ -8,8 +8,8 @@ import { hiddenNotice, NO_NOTICE, type HiddenNoticeState } from './hidden-notice
 import { createSlowdownHold } from './ledger.ts'
 
 /**
- * What the burst button does (.scratch/controls/spec.md decision 2): 5x Demand for 2 s, enough
- * to take the Edge burst Scenario's 4 per second to twice its limit of 10.
+ * What the burst button does (.scratch/controls/spec.md decision 2): 5x Demand for 2 s, so
+ * Backend overload's default 10 per second becomes 50 for long enough to see each Limiter pace it.
  */
 export const BURST: ControlChange = { kind: 'burst', multiplier: 5, durationMs: 2000 }
 

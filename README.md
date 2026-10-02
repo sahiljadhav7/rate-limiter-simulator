@@ -17,7 +17,7 @@ Diagrams show a rate limiter's rule, not what it does under load. "Allows 70 a s
 
 ## Features
 
-- Two Scenarios: **Backend overload** (sliding window counter against token bucket) and **Edge burst** (fixed window lets 2× its limit through at a window edge)
+- One Scenario, **Backend overload**: sliding window counter against token bucket, the two algorithms the simulator models
 - Live Demand slider, bursts, pause, step, speed, and a Retry Policy per panel
 - Deterministic: the same seed replays the same run
 - **Share** copies a link that reopens the exact setup
@@ -42,7 +42,7 @@ bun run dev    # http://localhost:5173
 
 1. Open the app on **Backend overload** and drag **Demand** to 30: the sliding window counter's Backend turns red, the token bucket's doesn't.
 2. Set a panel's **Retry Policy** to "Retry at once" and watch retries pile on.
-3. Pick **Edge burst** to see fixed window reach 2.0× its limit at every window edge.
+3. Read the diagnosis card: it names what failed, shows the numbers, says why, and lists the steps to fix it.
 4. Press **Share** to copy a link to that setup.
 
 ## Code example

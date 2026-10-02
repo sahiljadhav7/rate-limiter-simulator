@@ -5,7 +5,6 @@ import type { Finding } from '../src/sim/diagnosis.ts'
 import type { KeyBy } from '../src/sim/limiter.ts'
 import { withRetryMode, type RetryMode } from '../src/ui/controls/retry-options.ts'
 import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
-import { edgeBurstScenario } from '../src/ui/scenarios/edge-burst.ts'
 
 /**
  * Poisson 60/s from three Clients, `greedy` sending 8 shares (48/s) and the others 6/s each,
@@ -48,6 +47,11 @@ function findingsEachSecond(sc: Scenario): (readonly Finding[])[][] {
   return seen
 }
 const noisy = (fs: readonly Finding[]) => fs.find((f) => f.id === 'noisy-neighbor')
+/** Backend overload at 3x its Demand, where the most is turned away. */
+const at30: Scenario = {
+  ...backendOverloadScenario,
+  traffic: { ...backendOverloadScenario.traffic, demandRps: 30 },
+}
 const withRetry = (sc: Scenario, mode: RetryMode): Scenario => ({
   ...sc,
   variants: sc.variants.map((v) => ({ ...v, retry: withRetryMode(v.retry, mode) })),
@@ -87,14 +91,12 @@ describe('the noisy neighbor rule', () => {
     }
   })
 
-  // One Client's scripted bursts take most of Edge burst's allowed traffic (up to 98% over 5 s),
-  // but it is over its fair share in at most 8 of 10 seconds (Wait for Retry-After), so the
-  // Scenarios written for other rules stay quiet.
+  // With no greedy Client no one is over its fair share for 10 seconds running (at most 4 in
+  // Backend overload at 3x, seeds 1 to 8), so the Scenario written for other rules stays quiet.
   it.each([
     ['Backend overload at 10/s', backendOverloadScenario],
-    ['Edge burst at 4/s', edgeBurstScenario],
-    ['Edge burst at 4/s with "Wait for Retry-After"', withRetry(edgeBurstScenario, 'retry-after')],
-    ['Edge burst at 4/s with "Retry at once"', withRetry(edgeBurstScenario, 'immediate')],
+    ['Backend overload at 30/s with "Retry at once"', withRetry(at30, 'immediate')],
+    ['Backend overload at 30/s with "Wait for Retry-After"', withRetry(at30, 'retry-after')],
   ])('stays quiet in %s, seeds 1 to 3', (_, scenario) => {
     for (let seed = 1; seed <= 3; seed++) {
       for (const seen of findingsEachSecond({ ...scenario, seed })) {

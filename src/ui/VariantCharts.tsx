@@ -24,7 +24,7 @@ function pointsOf(snapshots: readonly Snapshot[], pick: (s: Snapshot) => number 
  */
 export const CHART_ROWS = 5
 
-/** The boundary-burst chart's title; a Limiter without a window keeps it over a short line. */
+/** The window chart's title; a Limiter without a window keeps it over a short line. */
 const BOUNDARY_TITLE = 'Allowed in the last window'
 
 /** What one Variant's charts are drawn from. */
@@ -41,9 +41,9 @@ export interface VariantChartsProps {
 }
 
 /**
- * The charts of one Variant, one grid row each (CHART_ROWS): the boundary burst, Attempts per
- * second, latency, the Backend queue, and Offered Load against Demand. A Limiter without a
- * window (token bucket) has no boundary burst, so its first row says so instead.
+ * The charts of one Variant, one grid row each (CHART_ROWS): Attempts allowed in the last window,
+ * Attempts per second, latency, the Backend queue, and Offered Load against Demand. A Limiter
+ * without a window (token bucket) has nothing to count per window, so its first row says so.
  */
 export const VariantCharts = memo(function VariantCharts({
   variant,
@@ -88,8 +88,8 @@ export const VariantCharts = memo(function VariantCharts({
         <div className="chart-none">
           <span className="chart-title">{BOUNDARY_TITLE}</span>
           <p>
-            {ALGORITHM_NAMES[config.limiter.algo]} has no window edge, so there is no boundary burst
-            to show.
+            {ALGORITHM_NAMES[config.limiter.algo]} has no window: it lets Attempts through as its
+            tokens come back, so there is no count per window to show.
           </p>
         </div>
       )}
@@ -98,7 +98,7 @@ export const VariantCharts = memo(function VariantCharts({
         unit="per second"
         nowMs={nowMs}
         markers={markers}
-        // Without a window there is no boundary-burst chart, so this is the top chart.
+        // Without a window there is no window chart, so this is the top chart.
         markerPills={limiterWindowSpec === null}
         series={[
           {

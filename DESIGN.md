@@ -175,11 +175,11 @@ Labels inside the card use `--text-dim`: `--text-faint` on `--warn-soft` is 4.36
 ┌ paper grid ──────────────────────────────────────────────────────────────────┐
 │ ┌──────────────┐ ┌───────────────────────────────────────────┐ ┌──────────┐ │
 │ │ Ratescale  ▾ │ │ DEMAND 50 req/s ━━━━●━━━━  ▶ ⏭ ↺   1× ▾  │ │ Share  ≡ │ │
-│ │ Boundary burst│ │           1   10   100   1k               │ └──────────┘ │
+│ │ Backend over…│ │           1   10   100   1k               │ └──────────┘ │
 │ └──────────────┘ └───────────────────────────────────────────┘              │
 │                                                                              │
-│ ┌ Variant A: Fixed window ──────────┐ ┌ Variant B: Sliding counter ───────┐ │
-│ │ [FIXED WINDOW] [GLOBAL]            │ │ [SLIDING COUNTER] [GLOBAL]         │ │
+│ ┌ Variant A: Sliding counter ───────┐ ┌ Variant B: Token bucket ──────────┐ │
+│ │ [SLIDING COUNTER] [GLOBAL]         │ │ [TOKEN BUCKET] [GLOBAL]            │ │
 │ │ (Clients)→(Limiter)→(Backend)      │ │ (Clients)→(Limiter)→(Backend)      │ │
 │ │ OFFERED  GOODPUT  REJECTED  P99    │ │ OFFERED  GOODPUT  REJECTED  P99    │ │
 │ │ 120/s    48/s     58%      151ms   │ │ ...                                │ │
@@ -205,7 +205,7 @@ Labels inside the card use `--text-dim`: `--text-faint` on `--warn-soft` is 4.36
 
 Following Breakscale's mobile layout:
 - The top bar is one row with the name and Scenario picker beside Share. Under it, the controls island: Demand with the headline stat to its right (the open tab's Attempt p99, named by the Variant's short name; on the Compare tab every Variant's p99, each named; a dash with no p99), the slider full width underneath, then play, step, reset and speed on one row. Burst and Seed sit behind a **More** disclosure (a native `<details>` whose summary looks like a button), as they are used least. There is no undo or redo: Reset gives a way back.
-- Only one Variant is visible at a time; the first is open on load. A bottom tab bar (height 56px, `--surface` with a top border and `--shadow-md`, as it floats over the page) switches between Variants, with a final **Compare** tab that stacks, per Variant, its short name, its stat row and its Root Cause (the Failure Mode and the severity in words) when a Finding is active. The name is a button that opens that Variant's tab; the whole block cannot be one, as a button may not hold the stat list. Each Variant's tab has its algorithm's icon in the limiter kind's stroke and a short name (Fixed window, Sliding window, Token bucket; two Variants sharing one add their key scope); the open tab has `--text` and a 3px `--accent` bar on its top edge. A tab whose Variant has an active Finding carries a dot in `--danger-mark` or `--warn-mark`, and its accessible name adds "broken" or "warning". The open tab is not part of the link.
+- Only one Variant is visible at a time; the first is open on load. A bottom tab bar (height 56px, `--surface` with a top border and `--shadow-md`, as it floats over the page) switches between Variants, with a final **Compare** tab that stacks, per Variant, its short name, its stat row and its Root Cause (the Failure Mode and the severity in words) when a Finding is active. The name is a button that opens that Variant's tab; the whole block cannot be one, as a button may not hold the stat list. Each Variant's tab has its algorithm's icon in the limiter kind's stroke and a short name (Sliding window, Token bucket; two Variants sharing one add their key scope); the open tab has `--text` and a 3px `--accent` bar on its top edge. A tab whose Variant has an active Finding carries a dot in `--danger-mark` or `--warn-mark`, and its accessible name adds "broken" or "warning". The open tab is not part of the link.
 - Charts keep their full width. Notes wrap under the charts.
 - Keep a 16px gutter, and never scroll horizontally.
 
@@ -221,7 +221,7 @@ Hand-drawn SVG polylines, with no chart library.
   - Latency percentiles are one ramp: p50 `--line-3`, p95 `--line-4`, p99 `--text-dim` at 2px.
   - Offered Load: `--accent`. Demand: dashed `--line-3`, so the gap between them is the Retry Amplification.
 - **Reference lines**: the configured limit, and the Baseline p99, as dashed `--line-2` with a mono label at the right end.
-- **Boundary burst**: the main chart is **allowed Attempts in the last window**, a rolling count sampled every tenth of a window. Plotting per-second buckets would hide the 2x. When the count crosses the limit, fill the area above the limit line with `--danger-soft` and label the peak ratio (`2.0×`).
+- **Last window**: the main chart is **allowed Attempts in the last window**, a rolling count sampled every tenth of a window, for a Limiter with a window (sliding window counter). Plotting per-second buckets would hide a burst across an edge. When the count crosses the limit, fill the area above the limit line with `--danger-soft` and label the peak ratio (`2.0×`).
 - **Requests waiting**: plot the most waiting during each second, not the count at its end, which reads 0 for a queue that overflowed and drained within the second; beside it, Attempts shed per second in `--danger-mark`, against the queue limit.
 - **Diagnosis marker**: a vertical 1px `--danger-mark` line at each active and past Finding's `startedAt`, on every chart of the Variant, so the lines line up down the panel. The top chart alone carries a pill per marker naming the Failure Mode: a real button (`--danger` text on `--surface`, `--danger-mark` border, label type) laid over the plot, since a control inside the SVG's `role="img"` would be hidden from screen readers. Pills close in time stack in rows instead of covering each other. Clicking one, or Enter on it, scrolls to its card and focuses it, or to the panel once the Finding has ended. Each chart's `aria-label` names its markers and when they started.
 - **Warm-up**: shade the first 5 seconds with `--surface-2` and put a WARM-UP pill on it.

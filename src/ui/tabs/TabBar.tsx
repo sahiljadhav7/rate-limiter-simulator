@@ -6,14 +6,6 @@ import './tabs.css'
 /** A Limiter algorithm's tab icon, 20px, drawn in the limiter kind's stroke colour. */
 function AlgorithmIcon(props: { readonly algo: LimiterSpec['algo'] }) {
   switch (props.algo) {
-    // A window with its frame: the counter resets at each edge.
-    case 'fixed-window':
-      return (
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <rect x="3" y="5" width="14" height="10" rx="1.5" />
-          <path d="M10 5v10" />
-        </svg>
-      )
     // A window moving along the time axis.
     case 'sliding-counter':
       return (

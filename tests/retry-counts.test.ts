@@ -4,7 +4,7 @@ import type { Scenario } from '../src/runner/scenario.ts'
 import { QUICK_RETRY_MS, type Snapshot } from '../src/sim/metrics.ts'
 import type { RetryPolicy } from '../src/sim/retry-policy.ts'
 
-/** 200/s against a fixed window of 60 per 500 ms: plenty of Rejects to retry. */
+/** 200/s against a sliding window counter of 60 per 500 ms: plenty of Rejects to retry. */
 const scenario = (retry: RetryPolicy): Scenario => ({
   id: 'retry-counts',
   title: 'Retry counts',
@@ -17,8 +17,8 @@ const scenario = (retry: RetryPolicy): Scenario => ({
   backend: { slots: 4, queueLimit: 20, meanMs: 20, cv: 1 },
   variants: [
     {
-      label: 'Fixed window',
-      limiter: { algo: 'fixed-window', keyBy: 'global', limit: 60, windowMs: 500 },
+      label: 'Sliding window counter',
+      limiter: { algo: 'sliding-counter', keyBy: 'global', limit: 60, windowMs: 500 },
       retry,
     },
   ],

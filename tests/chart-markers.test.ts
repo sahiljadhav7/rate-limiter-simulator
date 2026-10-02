@@ -4,8 +4,8 @@ import { pillLanes } from '../src/ui/chart/geometry.ts'
 import { findingMarkers } from '../src/ui/panel/diagnosis-card.ts'
 
 const finding = (fields: Partial<Finding> = {}): Finding => ({
-  id: 'boundary-burst',
-  label: 'Boundary burst',
+  id: 'limit-too-tight',
+  label: 'Limit too tight',
   kind: 'cause',
   severity: 'broken',
   startedAt: 11_000,
@@ -31,14 +31,14 @@ describe('findingMarkers', () => {
       ),
     ).toEqual([
       { t: 10_000, label: 'Retry storm', targetId: 'p' },
-      { t: 41_000, label: 'Boundary burst', targetId: 'p-boundary-burst' },
+      { t: 41_000, label: 'Limit too tight', targetId: 'p-limit-too-tight' },
     ])
   })
 
   it('points an active Finding at its card and an ended one at the panel, since its card is gone', () => {
     const [ended, active] = findingMarkers([finding({ startedAt: 50_000 })], [past()], 'p')
     expect(ended?.targetId).toBe('p')
-    expect(active?.targetId).toBe('p-boundary-burst')
+    expect(active?.targetId).toBe('p-limit-too-tight')
   })
 })
 
@@ -56,7 +56,7 @@ describe('pillLanes', () => {
   })
 
   it('moves a pill that would overlap one before it to the next free lane', () => {
-    // Retry storm at 10 s and boundary burst at 11 s: about 8 px apart on a 480 px plot.
+    // Retry storm at 10 s and limit too tight at 11 s: about 8 px apart on a 480 px plot.
     expect(
       pillLanes(
         [

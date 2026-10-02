@@ -2,6 +2,8 @@
 
 A rate-limiting simulator in the spirit of [Breakscale](https://github.com/xevrion/breakscale), scoped to rate limiting and its surrounding concepts.
 
+> **Scope change (2026-10-02, the human's decision):** the simulator models only two Limiter algorithms, **sliding window counter** and **token bucket**. Fixed window was removed, with the Edge burst Scenario and the boundary burst rule; only Backend overload remains. One-click Apply fix (RS-27) was also removed: a diagnosis card explains why it fails and lists the steps as text. Where this plan still describes fixed window, Edge burst, boundary burst or Apply fix, it is history, not the plan.
+
 **Target:** core build of about 24 hours (two long days), failure diagnosis on day 3, remaining scenarios and rules as stretch. Estimates in this revision are recomputed from the tickets below (the whole plan is about 43 hours). Domain terms (Request, Attempt, Variant, Demand, and so on) are defined in `CONTEXT.md`.
 
 ## Pitch

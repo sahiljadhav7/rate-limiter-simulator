@@ -3,8 +3,8 @@ import { createRunner } from '../src/runner/runner.ts'
 import type { Scenario } from '../src/runner/scenario.ts'
 import type { Finding } from '../src/sim/diagnosis.ts'
 import type { LimiterSpec } from '../src/sim/limiter.ts'
+import { withRetryMode } from '../src/ui/controls/retry-options.ts'
 import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
-import { edgeBurstScenario } from '../src/ui/scenarios/edge-burst.ts'
 
 /**
  * Steady Poisson Demand in front of a Backend of 4 slots of 50 ms (80/s), behind `limiter`
@@ -48,6 +48,10 @@ function findingsEachSecond(sc: Scenario): (readonly Finding[])[][] {
   return seen
 }
 const tight = (fs: readonly Finding[]) => fs.find((f) => f.id === 'limit-too-tight')
+const withRetry = (sc: Scenario, mode: 'immediate'): Scenario => ({
+  ...sc,
+  variants: sc.variants.map((v) => ({ ...v, retry: withRetryMode(v.retry, mode) })),
+})
 const at = (sc: Scenario, demandRps: number): Scenario => ({
   ...sc,
   traffic: { ...sc.traffic, demandRps },
@@ -93,28 +97,15 @@ describe('the limit too tight rule', () => {
   // steady-rate condition keeps it quiet (at most 3 of 10 seconds over the limit, seeds 1 to 8).
   it.each([
     ['Backend overload at 30/s', at(backendOverloadScenario, 30)],
-    ['Edge burst at 4/s', edgeBurstScenario],
+    [
+      'Backend overload at 40/s with "Retry at once"',
+      withRetry(at(backendOverloadScenario, 40), 'immediate'),
+    ],
   ])('stays quiet in %s, seeds 1 to 3', (_, scenario) => {
     for (let seed = 1; seed <= 3; seed++) {
       for (const seen of findingsEachSecond({ ...scenario, seed })) {
         expect(seen.filter((fs) => tight(fs))).toEqual([])
       }
     }
-  })
-
-  it('in Edge burst at 3x, where background Demand (12/s) is over the limit (10/s), is a Cause beside boundary burst', () => {
-    const [fixed = [], sliding = []] = findingsEachSecond(at(edgeBurstScenario, 12))
-    // Active in 762 of 848 judged windows for each Limiter over seeds 1 to 8 (from 15 s).
-    for (const seen of [fixed, sliding]) {
-      expect(seen.filter((fs) => tight(fs)).length / (seen.length - 5)).toBeGreaterThan(0.75)
-    }
-    // Boundary burst starts first (11 s), so whenever both show it is the fixed window's Root
-    // Cause; the sliding window counter has no other Cause.
-    const roots = (seen: (readonly Finding[])[]) =>
-      new Set(
-        seen.filter((fs) => tight(fs)).map((fs) => fs.find((f) => f.role === 'root-cause')?.id),
-      )
-    expect(roots(fixed)).toEqual(new Set(['boundary-burst']))
-    expect(roots(sliding)).toEqual(new Set(['limit-too-tight']))
   })
 })
