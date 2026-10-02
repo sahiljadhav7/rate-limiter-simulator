@@ -2,6 +2,7 @@ import { memo, useId, useState, type CSSProperties, type KeyboardEvent } from 'r
 import { SPEEDS, type Speed } from '../../runner/runner.ts'
 import { MAX_SEED } from '../../sim/index.ts'
 import { DASH, formatNumber } from '../panel/stats.ts'
+import { HIDDEN_NOTICE } from '../hidden-notice.ts'
 import type { HeadlineStat } from '../tabs/tabs.ts'
 import type { RunnerControls } from '../use-runner.ts'
 import { DEMAND_TICKS, demandFromPosition, positionFromDemand } from './demand.ts'
@@ -151,6 +152,8 @@ export interface TopBarControlsProps {
   readonly phone: boolean
   /** The phone's headline stat; keep the same array while its values hold, as this is memoised. */
   readonly headline: readonly HeadlineStat[]
+  /** Whether to say the run stood still while the tab was hidden. */
+  readonly hiddenNotice: boolean
 }
 
 /**
@@ -159,8 +162,18 @@ export interface TopBarControlsProps {
  * change when simulated time moves, or restart the run.
  */
 export const TopBarControls = memo(function TopBarControls(props: TopBarControlsProps) {
-  const { controls, demandRps, paused, speed, seed, onSeed, onDemandRelease, phone, headline } =
-    props
+  const {
+    controls,
+    demandRps,
+    paused,
+    speed,
+    seed,
+    onSeed,
+    onDemandRelease,
+    phone,
+    headline,
+    hiddenNotice,
+  } = props
   const burstAndSeed = (
     <>
       <button
@@ -233,6 +246,13 @@ export const TopBarControls = memo(function TopBarControls(props: TopBarControls
       ) : (
         burstAndSeed
       )}
+      {/*
+       * Last, on a line of its own, so showing it moves no control sideways under the pointer.
+       * Always present, so a screen reader announces the notice once when it appears.
+       */}
+      <span className="label hidden-notice" role="status">
+        {hiddenNotice ? HIDDEN_NOTICE : null}
+      </span>
     </div>
   )
 })

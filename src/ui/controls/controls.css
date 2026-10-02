@@ -307,3 +307,18 @@
     transition: none;
   }
 }
+
+/*
+ * The run stood still while the tab was hidden (.scratch/polish/ decision 17): a line of its own
+ * at the end of the controls, so nothing moves sideways when it shows. Two classes, so its
+ * colour beats .label's, which ties with one and loads later (CLAUDE.md). Empty, it takes no room.
+ */
+.top-bar-controls .hidden-notice {
+  flex-basis: 100%;
+  color: var(--warn);
+  font-weight: var(--fw-num);
+}
+
+.top-bar-controls .hidden-notice:empty {
+  display: none;
+}

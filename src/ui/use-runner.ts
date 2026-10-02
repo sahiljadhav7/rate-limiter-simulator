@@ -4,6 +4,7 @@ import type { Scenario } from '../runner/scenario.ts'
 import type { ControlChange } from '../sim/index.ts'
 import { createPendingDemand } from './controls/pending-demand.ts'
 import { createFrameClock } from './frame-clock.ts'
+import { hiddenNotice, NO_NOTICE, type HiddenNoticeState } from './hidden-notice.ts'
 import { createSlowdownHold } from './ledger.ts'
 
 /**
@@ -37,34 +38,47 @@ export interface RunnerControls {
  * made once by a lazy `useState`, which keeps it for the component's lifetime as a ref would,
  * and the controls reach it through `controls`. `slower` says whether to show the ledger's
  * RUNNING SLOWER THAN REQUESTED, from every frame rather than only the published ones.
+ * `hiddenNotice` says whether to show that the run stood still while the tab was hidden
+ * (hidden-notice.ts); any control dismisses it.
  */
 export function useRunner(scenario: Scenario): {
   readonly view: RunnerView
   readonly controls: RunnerControls
   readonly slower: boolean
+  readonly hiddenNotice: boolean
 } {
   const [runner] = useState(() => createRunner(scenario))
   const [pending] = useState(createPendingDemand)
+  /** The hidden-tab notice, changed by visibility, controls and frames; published with the view. */
+  const [notice] = useState<{ state: HiddenNoticeState }>(() => ({ state: NO_NOTICE }))
+  /** Runs a control, which dismisses the hidden-tab notice. */
+  const control =
+    <A extends unknown[]>(act: (...args: A) => void) =>
+    (...args: A) => {
+      notice.state = hiddenNotice(notice.state, { kind: 'control' })
+      act(...args)
+    }
   const [controls] = useState<RunnerControls>(() => ({
-    setDemand: (demandRps) => pending.set(demandRps),
-    burst: () => runner.applyControl(BURST),
-    play: () => runner.resume(),
-    pause: () => runner.pause(),
-    step: () => runner.step(),
+    setDemand: control((demandRps: number) => pending.set(demandRps)),
+    burst: control(() => runner.applyControl(BURST)),
+    play: control(() => runner.resume()),
+    pause: control(() => runner.pause()),
+    step: control(() => runner.step()),
     // A slider value still waiting would otherwise land at 0 of the new run, as a live change
     // nobody made there.
-    reset: () => {
+    reset: control(() => {
       pending.take()
       runner.reset()
-    },
-    setSpeed: (speed) => runner.setSpeed(speed),
-    restart: (next) => {
+    }),
+    setSpeed: control((speed: Speed) => runner.setSpeed(speed)),
+    restart: control((next: Scenario) => {
       runner.restart(next)
       pending.take()
-    },
+    }),
   }))
   const [view, setView] = useState(() => runner.view())
   const [slower, setSlower] = useState(false)
+  const [showNotice, setShowNotice] = useState(false)
 
   useEffect(() => {
     // A handle for checking the app from the browser console or a test script; dev builds only.
@@ -73,7 +87,16 @@ export function useRunner(scenario: Scenario): {
     const hold = createSlowdownHold()
     // A background tab gets no frames at all, so the first frame back would see the whole
     // hidden time; restarting on every visibility change makes that frame count 0 instead.
-    const restart = () => clock.restart()
+    const restart = () => {
+      clock.restart()
+      const view = runner.view()
+      notice.state = hiddenNotice(
+        notice.state,
+        document.visibilityState === 'hidden'
+          ? { kind: 'hidden', playing: !view.paused }
+          : { kind: 'visible', simMs: view.simMs },
+      )
+    }
     document.addEventListener('visibilitychange', restart)
     // The view is published about 30 times a second even while paused, so a control pressed
     // then shows within a frame or two without publishing on its own.
@@ -82,8 +105,11 @@ export function useRunner(scenario: Scenario): {
       if (demandRps !== null) runner.applyControl({ kind: 'demand', demandRps })
       hold.frame(nowMs, runner.tick(clock.step(nowMs, document.visibilityState === 'visible')))
       if (clock.shouldPublish(nowMs)) {
-        setView(runner.view())
+        const view = runner.view()
+        notice.state = hiddenNotice(notice.state, { kind: 'tick', simMs: view.simMs })
+        setView(view)
         setSlower(hold.showing(nowMs))
+        setShowNotice(notice.state.shownAtMs !== null)
       }
       frame = requestAnimationFrame(onFrame)
     })
@@ -91,7 +117,7 @@ export function useRunner(scenario: Scenario): {
       cancelAnimationFrame(frame)
       document.removeEventListener('visibilitychange', restart)
     }
-  }, [runner, pending])
+  }, [runner, pending, notice])
 
-  return { view, controls, slower }
+  return { view, controls, slower, hiddenNotice: showNotice }
 }

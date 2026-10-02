@@ -58,7 +58,7 @@ function ScenarioRun(props: {
   const [openTab, setOpenTab] = useState(0)
   const [scenario, setScenario] = useState<Scenario>(initial)
   const names = useMemo(() => shortNames(scenario.variants), [scenario.variants])
-  const { view, controls: runnerControls, slower } = useRunner(initial)
+  const { view, controls: runnerControls, slower, hiddenNotice } = useRunner(initial)
   // Each Variant's p99 as the stat row computes it; the headline array stays the same object
   // while the values hold, so the memoised controls re-render once a second, not every frame.
   const p99Key = view.variants
@@ -158,6 +158,7 @@ function ScenarioRun(props: {
           onDemandRelease={setLinkDemand}
           phone={phone}
           headline={headline}
+          hiddenNotice={hiddenNotice}
         />
         <ShareButton url={link} />
       </header>
