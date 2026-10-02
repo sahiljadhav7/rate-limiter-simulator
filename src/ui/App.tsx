@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState, type CSSProperties } from 'react'
-import type { Scenario } from '../runner/scenario.ts'
+import { variantBackend, type Scenario } from '../runner/scenario.ts'
 import { demandAt } from './controls/demand.ts'
 import { withRetryMode, withVariantRetry, type RetryMode } from './controls/retry-options.ts'
 import { TopBarControls } from './controls/TopBarControls.tsx'
@@ -168,7 +168,7 @@ function ScenarioRun(props: {
                 key={config.label}
                 variant={variant}
                 config={config}
-                backend={scenario.backend}
+                backend={variantBackend(scenario, i)}
                 clients={scenario.traffic.clients.length}
                 nowMs={view.simMs}
                 index={i}

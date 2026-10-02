@@ -27,6 +27,7 @@ import {
   createScenarioSource,
   subBucketMsFor,
   type Scenario,
+  variantBackend,
   type VariantConfig,
 } from './scenario.ts'
 
@@ -176,21 +177,24 @@ function checkSameShape(current: Scenario, next: Scenario): void {
 
 function startRun(scenario: Scenario): Run {
   const source = createScenarioSource(scenario)
-  const variants = scenario.variants.map((config) => ({
-    config,
-    engine: createEngine({
-      traffic: source.reader(),
-      limiter: createLimiter(config.limiter),
-      retry: config.retry,
-      backend: scenario.backend,
-      // Each Variant has its own streams from the same seed, so service times and jitter
-      // draws in one never shift another's.
-      streams: createStreams(scenario.seed),
-      subBucketMs: subBucketMsFor(config.limiter),
-    }),
-    diagnoser: createDiagnoser({ backend: scenario.backend, limiter: config.limiter }),
-    diagnosed: 0,
-  }))
+  const variants = scenario.variants.map((config, i) => {
+    const backend = variantBackend(scenario, i)
+    return {
+      config,
+      engine: createEngine({
+        traffic: source.reader(),
+        limiter: createLimiter(config.limiter),
+        retry: config.retry,
+        backend,
+        // Each Variant has its own streams from the same seed, so service times and jitter
+        // draws in one never shift another's.
+        streams: createStreams(scenario.seed),
+        subBucketMs: subBucketMsFor(config.limiter),
+      }),
+      diagnoser: createDiagnoser({ backend, limiter: config.limiter }),
+      diagnosed: 0,
+    }
+  })
   return { source, variants }
 }
 

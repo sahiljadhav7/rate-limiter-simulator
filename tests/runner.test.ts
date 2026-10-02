@@ -84,7 +84,8 @@ function runDirectly(s: Scenario, untilMs: number) {
       traffic: source.reader(),
       limiter: createLimiter(variant.limiter),
       retry: variant.retry,
-      backend: s.backend,
+      // Merged by hand, so the runner's own merge is checked against it.
+      backend: { ...s.backend, ...variant.backend },
       streams: createStreams(s.seed),
       subBucketMs: subBucketMsFor(variant.limiter),
     }),
@@ -125,6 +126,41 @@ describe('createRunner', () => {
 
   it('throws a RangeError for an invalid Scenario', () => {
     expect(() => createRunner({ ...scenario, variants: [] })).toThrow(RangeError)
+  })
+})
+
+describe("a Variant's own Backend", () => {
+  /** The token bucket with twice the slots, and the sliding counter with a queue of 5. */
+  const own: Scenario = {
+    ...scenario,
+    variants: scenario.variants.map((variant, i) =>
+      i === 1
+        ? { ...variant, backend: { slots: 8 } }
+        : i === 2
+          ? { ...variant, backend: { queueLimit: 5 } }
+          : variant,
+    ),
+  }
+
+  it("runs that Variant on it, and every other Variant on the Scenario's Backend", () => {
+    const runner = createRunner(own, UNLIMITED)
+    tickTo(runner, 6000)
+    expect(results(runner)).toEqual(resultsDirectly(own, 6000))
+    const shared = createRunner(scenario, UNLIMITED)
+    tickTo(shared, 6000)
+    const [fixed, token] = results(runner)
+    const [fixedShared, tokenShared] = results(shared)
+    expect(fixed).toEqual(fixedShared)
+    expect(token?.totals).not.toEqual(tokenShared?.totals)
+  })
+
+  it('is what that Variant is diagnosed against', () => {
+    const runner = createRunner(own, UNLIMITED)
+    tickTo(runner, 20_000)
+    const overflow = (i: number) =>
+      runner.view().variants[i]?.findings.find((f) => f.id === 'queue-overflow')?.why
+    expect(overflow(0)).toMatch(/The queue of 20 filled/)
+    expect(overflow(2)).toMatch(/The queue of 5 filled/)
   })
 })
 

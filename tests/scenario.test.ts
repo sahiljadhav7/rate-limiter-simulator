@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { checkScenario, subBucketMsFor, type Scenario } from '../src/runner/scenario.ts'
+import {
+  checkScenario,
+  subBucketMsFor,
+  variantBackend,
+  type Scenario,
+} from '../src/runner/scenario.ts'
 
 const scenario: Scenario = {
   id: 'edge-burst',
@@ -78,6 +83,10 @@ describe('checkScenario', () => {
     ],
     ['an invalid Backend', { ...scenario, backend: { ...scenario.backend, slots: 0 } }],
     [
+      "an invalid Variant's own Backend",
+      { ...scenario, variants: [variant, { ...variant, label: 'B', backend: { slots: 2.5 } }] },
+    ],
+    [
       'controls out of time order',
       {
         ...scenario,
@@ -129,5 +138,29 @@ describe('subBucketMsFor', () => {
     expect(
       subBucketMsFor({ algo: 'token-bucket', keyBy: 'global', capacity: 5, refillPerSec: 10 }),
     ).toBe(100)
+  })
+})
+
+describe('variantBackend', () => {
+  const withOwn: Scenario = {
+    ...scenario,
+    variants: [variant, { ...variant, label: 'More slots', backend: { slots: 8 } }],
+  }
+
+  it("is the Scenario's Backend for a Variant with no Backend of its own", () => {
+    expect(variantBackend(withOwn, 0)).toEqual({ slots: 4, queueLimit: 10, meanMs: 50, cv: 1 })
+  })
+
+  it("is the Scenario's Backend with the Variant's changes over it", () => {
+    expect(variantBackend(withOwn, 1)).toEqual({ slots: 8, queueLimit: 10, meanMs: 50, cv: 1 })
+  })
+
+  it('names the Variant whose Backend is invalid', () => {
+    const bad = { ...scenario, variants: [{ ...variant, backend: { queueLimit: -1 } }] }
+    expect(() => checkScenario(bad)).toThrow(/Fixed window.*queue limit/)
+  })
+
+  it('throws a RangeError for a Variant that does not exist', () => {
+    expect(() => variantBackend(withOwn, 2)).toThrow(RangeError)
   })
 })

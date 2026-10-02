@@ -29,6 +29,12 @@ export interface VariantConfig {
   readonly limiter: LimiterSpec
   /** What a client does after a failed Attempt. */
   readonly retry: RetryPolicy
+  /**
+   * Changes to the Scenario's Backend for this Variant alone, such as more slots: a Variant made
+   * by applying a fix may run its own Backend (CONTEXT.md "Variant"). Left out, it runs the
+   * Scenario's. Read it through `variantBackend`.
+   */
+  readonly backend?: Partial<BackendSpec>
 }
 
 /**
@@ -78,10 +84,32 @@ export function checkScenario(scenario: Scenario): void {
   }
   createScenarioSource(scenario)
   checkBackendSpec(scenario.backend)
-  for (const variant of variants) {
+  variants.forEach((variant, i) => {
     createLimiter(variant.limiter)
     checkRetryPolicy(variant.retry)
+    if (variant.backend === undefined) return
+    try {
+      checkBackendSpec(variantBackend(scenario, i))
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error
+      throw new RangeError(`The Backend of ${variant.label}: ${error.message}`)
+    }
+  })
+}
+
+/**
+ * The Backend Variant `index` runs: the Scenario's, with the Variant's own changes over it.
+ * Throws a RangeError for a Variant the Scenario does not have. It does not check the result;
+ * `checkScenario` does.
+ */
+export function variantBackend(scenario: Scenario, index: number): BackendSpec {
+  const variant = scenario.variants[index]
+  if (variant === undefined) {
+    throw new RangeError(
+      `The Scenario has ${scenario.variants.length} Variants, so there is no Variant ${index}`,
+    )
   }
+  return { ...scenario.backend, ...variant.backend }
 }
 
 /**

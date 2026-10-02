@@ -9,7 +9,7 @@ A single lesson: the shared traffic, the Backend, and the Variants being compare
 _Avoid_: preset, demo, experiment
 
 **Variant**:
-One Limiter and Retry Policy configuration inside a Scenario, run on the Scenario's shared traffic. Applying a fix produces a new Variant.
+One Limiter and Retry Policy configuration inside a Scenario, run on the Scenario's shared traffic and in front of the Scenario's Backend. Applying a fix produces a new Variant, which may run its own Backend when the Fix changes the Backend.
 _Avoid_: panel (the Panel is only its on-screen view), lane, run
 
 ## Traffic
@@ -41,7 +41,7 @@ The Limiter's answer for one Attempt: **Allow**, **Reject**, or **Delay** (hold 
 _Avoid_: verdict, result
 
 **Backend**:
-The simulated service behind the Limiter, with a fixed number of slots and a bounded queue.
+The simulated service behind the Limiter, with a fixed number of slots and a bounded queue. A Scenario has one Backend, and each Variant runs its own copy of it; a Variant made by applying a fix may run a changed one, such as with more slots.
 _Avoid_: server, upstream, service
 
 **Node**:
