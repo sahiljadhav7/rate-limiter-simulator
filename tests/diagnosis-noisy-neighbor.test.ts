@@ -77,7 +77,7 @@ describe('the noisy neighbor rule', () => {
       'Client',
       'Its share of allowed',
       'Others asked for',
-      'Others rejected',
+      "Others' Attempts rejected",
     ])
     expect(finding?.evidence[0]?.value).toBe('a')
     expect(finding?.why).toMatch(
@@ -139,9 +139,9 @@ describe('the noisy neighbor rule', () => {
     },
   )
 
-  // The others' retries are not their greed either: crowded out, their rejected Requests come
-  // back as Attempts, which must not lift them over the fair share and clear the Finding.
-  it('judges what the others ask for, not their retries', () => {
+  // The others' retry Attempts are not their greed either: crowded out, their rejected Requests
+  // come back as Attempts, which must not lift them over the fair share and clear the Finding.
+  it('judges what the others ask for, not their retry Attempts', () => {
     const limiter = {
       algo: 'token-bucket',
       keyBy: 'global',
@@ -153,7 +153,7 @@ describe('the noisy neighbor rule', () => {
       [noisyNeighborRule(limiter)],
     )
     // The others ask for 8 each (16 of a fair 26.7), but send 20 Attempts each (40) with their
-    // retries, and 70% of those are rejected.
+    // retry Attempts, and 70% of those are rejected.
     for (let t = 6; t <= 20; t++) {
       const other = { demand: 8, offeredLoad: 20, allowed: 6 }
       diagnoser.add(

@@ -978,12 +978,11 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
       // more Attempts without asking for more (a retry storm says that).
       const steady = recent.every((s) => (s.perClient[top]?.demand ?? 0) > fairShare)
       const othersOffered = ranked.reduce((t, [, c]) => t + c.offered, 0) - topTotals.offered
-      // What the others ask for, not their retries: crowded out, their rejected Requests come
-      // back as Attempts, and counting those would lift them over their share and clear the
-      // Finding just as they lose the most: on the fixture with retries on they lose 60% to 76% of
-      // their Attempts, and judged on Attempts the Finding showed for as little as 0 s of 106
-      // ("Wait for Retry-After"); on Demand it is broken for all 106 (seeds 1 to 8,
-      // .scratch/new-scenarios/noisy-retry.ts).
+      // What the others ask for, not their retry Attempts: crowded out, their rejected Requests
+      // come back as Attempts, and counting those would lift them over their share and clear the
+      // Finding just as they lose the most. On the fixture with retries on they lose 60% to 76% of
+      // their Attempts while asking for under their share, and it is broken for all 106 s under
+      // every Retry Policy (seeds 1 to 8, .scratch/new-scenarios/noisy-retry.ts).
       const othersDemand = ranked.reduce((t, [, c]) => t + c.demand, 0) - topTotals.demand
       const othersPerSecond = othersDemand / recent.length
       const othersFair = fairShare * (clients - 1)
@@ -1002,7 +1001,7 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
             metric: 'Others asked for',
             value: `${perSecondText(othersPerSecond)} of a fair ${perSecondText(othersFair)}`,
           },
-          { metric: 'Others rejected', value: percent(othersRejected) },
+          { metric: "Others' Attempts rejected", value: percent(othersRejected) },
         ],
         why:
           `Client ${top} sent more than its fair share of the limit (${perSecondText(fairShare)}, ` +
