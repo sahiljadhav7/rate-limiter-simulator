@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createRunner } from '../src/runner/runner.ts'
 import type { Scenario } from '../src/runner/scenario.ts'
 import { backendOverloadScenario } from '../src/ui/scenarios/backend-overload.ts'
+import { goodputCollapseScenario } from '../src/ui/scenarios/goodput-collapse.ts'
 import { noisyNeighborScenario } from '../src/ui/scenarios/noisy-neighbor.ts'
 import { retryStormScenario } from '../src/ui/scenarios/retry-storm.ts'
 import { withRetryMode, type RetryMode } from '../src/ui/controls/retry-options.ts'
@@ -63,6 +64,14 @@ const stormAndNoisy = {
   modes: { 'retry-storm': 'warn', 'noisy-neighbor': 'broken' },
   roots: ['retry-storm'],
 }
+const loose = {
+  modes: { 'limit-too-loose': 'broken', saturation: 'broken', 'queue-overflow': 'broken' },
+  roots: ['limit-too-loose'],
+}
+const stormAndLoose = {
+  modes: { ...loose.modes, 'retry-storm': 'broken' },
+  roots: ['retry-storm'],
+}
 const stormAndOverflow = {
   modes: { 'retry-storm': 'broken', 'queue-overflow': 'broken' },
   roots: ['retry-storm'],
@@ -81,7 +90,10 @@ const stormAndOverflow = {
  * steadily. In Noisy neighbor limit too tight stays quiet as the Backend is about 50% busy, over
  * the 40% it needs; noisy neighbor fires only behind the limit shared by all. Retry storm has
  * Backend overload's traffic and Backend behind its token bucket, which never overflows the
- * queue there, so only a retry storm fires, and only where retries come at once.
+ * queue there, so only a retry storm fires, and only where retries come at once. Goodput collapse
+ * opened at 120/s (.scratch/new-scenarios/collapse-rows.ts) has no good spell for goodput collapse
+ * to fall from, so the table shows limit too loose and what follows it; its own lesson, a raise
+ * while it runs, is the test below the table.
  */
 const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 10, undefined, [none, none]],
@@ -122,6 +134,20 @@ const TABLE: readonly Row[] = [
   ['Retry storm', retryStormScenario, 30, 'backoff', [none, none]],
   ['Retry storm', retryStormScenario, 30, 'backoff-jitter', [none, none]],
   ['Retry storm', retryStormScenario, 30, 'retry-after', [none, none]],
+  ['Goodput collapse', goodputCollapseScenario, 40, undefined, [none, none]],
+  ['Goodput collapse', goodputCollapseScenario, 40, 'immediate', [none, none]],
+  ['Goodput collapse', goodputCollapseScenario, 40, 'backoff', [none, none]],
+  ['Goodput collapse', goodputCollapseScenario, 40, 'backoff-jitter', [none, none]],
+  ['Goodput collapse', goodputCollapseScenario, 40, 'retry-after', [none, none]],
+  ['Goodput collapse', goodputCollapseScenario, 120, undefined, [loose, none]],
+  // Retries at once storm on both. Behind the limit of 60 they are rejected at once and come
+  // straight back, and the storm is its only Finding.
+  ['Goodput collapse', goodputCollapseScenario, 120, 'immediate', [stormAndLoose, storm]],
+  ['Goodput collapse', goodputCollapseScenario, 120, 'backoff', [loose, none]],
+  ['Goodput collapse', goodputCollapseScenario, 120, 'backoff-jitter', [loose, none]],
+  // The token bucket's Retry-After is the wait for its next token, at most 8.3 ms at 120/s,
+  // inside the 10 ms that counts as at once; at 60/s it is up to 16.7 ms.
+  ['Goodput collapse', goodputCollapseScenario, 120, 'retry-after', [stormAndLoose, none]],
 ]
 
 describe('Scenario Findings table', () => {
@@ -211,4 +237,41 @@ describe('Scenario Findings table', () => {
     expect(atOnce).toBeGreaterThan(0)
     expect(backOff).toBeGreaterThan(atOnce * 1.2)
   })
+
+  // As a student drags the slider: 30 s at the default, then three or four times it. Over seeds
+  // 1 to 8 (.scratch/new-scenarios/collapse-scenario.ts 120) goodput collapse is Broken 83 to 86 s
+  // and limit too loose 82 to 85 s of the 90 after, and the limit of 60 never has a Finding. Seed
+  // 5 stalls before its p99 is ever twice the baseline, so it checks that saturation, and so
+  // limit too loose, still enter on a stalled Backend.
+  it.each([
+    [120, 1],
+    [120, 5],
+    [160, 1],
+  ])(
+    'Goodput collapse raised from 40/s to %s/s (seed %s): the limit of 120 collapses behind limit too loose, the limit of 60 never',
+    (demandRps, seed) => {
+      const runner = createRunner({ ...goodputCollapseScenario, seed }, { eventBudget: Infinity })
+      while (runner.view().simMs < 30_000) runner.tick(100)
+      runner.applyControl({ kind: 'demand', demandRps })
+      const collapsedSeconds = [0, 0]
+      const roots = [new Set<string>(), new Set<string>()]
+      const collapseRoles = new Set<string>()
+      for (let second = 31; second <= 120; second++) {
+        while (runner.view().simMs < second * 1000) runner.tick(100)
+        runner.view().variants.forEach(({ findings }, i) => {
+          const collapse = findings.find((f) => f.id === 'goodput-collapse')
+          if (collapse?.severity === 'broken') collapsedSeconds[i] = (collapsedSeconds[i] ?? 0) + 1
+          if (collapse && i === 0) collapseRoles.add(collapse.role)
+          const root = findings.find((f) => f.role === 'root-cause')
+          if (root && second > 40) roots[i]?.add(root.id)
+        })
+      }
+      const [limit120, limit60] = collapsedSeconds
+      expect(limit120).toBeGreaterThanOrEqual(80)
+      expect([...(roots[0] ?? [])]).toEqual(['limit-too-loose'])
+      expect([...collapseRoles]).toEqual(['contributing'])
+      expect(limit60).toBe(0)
+      expect(roots[1]?.size).toBe(0)
+    },
+  )
 })

@@ -1,5 +1,6 @@
 import type { Scenario } from '../../runner/scenario.ts'
 import { backendOverloadScenario } from './backend-overload.ts'
+import { goodputCollapseScenario } from './goodput-collapse.ts'
 import { noisyNeighborScenario } from './noisy-neighbor.ts'
 import { retryStormScenario } from './retry-storm.ts'
 
@@ -8,4 +9,5 @@ export const SCENARIOS: readonly [Scenario, ...Scenario[]] = [
   backendOverloadScenario,
   noisyNeighborScenario,
   retryStormScenario,
+  goodputCollapseScenario,
 ]
