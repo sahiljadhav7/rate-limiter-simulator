@@ -154,7 +154,7 @@ The two blocks above are the source of truth for each theme's values. In `src/ui
 
 **Handwritten note.** Scenario explanations in `--hand` at about 20px, colour `--text`, sitting directly on the graph paper with no island around them, placed beside what they explain. Keep each note to two to four short lines. Each Scenario has two, below the panels and at most 600px wide: what you're seeing and why at 20px, then what this models and leaves out at 17px, with its two labels in weight 700. Load Caveat (weights 400 and 700, Latin only) self-hosted with `@fontsource/caveat`, with `font-display: swap`.
 
-**Ledger.** A single-line status strip at the bottom-left: mono, `--fs-label`, uppercase, `--text-faint`, on `--surface` with a `--border` outline and radius `--r-btn`. Content: `3 VARIANTS · SEED 42 · T 64.2s · 1× · 18,204 EVENTS`. When the event budget is hit it adds `RUNNING SLOWER THAN REQUESTED` in `--warn`.
+**Ledger.** A single-line status strip at the end of the page, after the notes, in the page flow (a strip fixed to the screen covered chart lines while scrolling): mono, `--fs-label`, uppercase, `--text-faint`, on `--surface` with a `--border` outline and radius `--r-btn`. Content: `3 VARIANTS · SEED 42 · T 64.2s · 1× · 18,204 EVENTS`. When the event budget is hit it adds `RUNNING SLOWER THAN REQUESTED` in `--warn`.
 
 **Diagnosis card.** An island that slides up 6px and fades in (`--dur-slow`, `--ease-out`) inside the affected Variant's panel. A 3px left border in `--danger-mark` (`broken`) or `--warn-mark` (`warn`), background `--danger-soft` or `--warn-soft`. Contents, in order:
 1. A pill (ROOT CAUSE or CONTRIBUTING), the Failure Mode label in `--fs-lg`, and the severity in words in label type (BROKEN in `--danger`, WARNING in `--warn`), so it is not shown by colour alone.
@@ -196,7 +196,7 @@ Labels inside the card use `--text-dim`: `--text-faint` on `--warn-soft` is 4.36
 - **Top bar**: three islands spaced `--sp-3` from the viewport edges. On the left, the name and a Scenario picker. In the middle, the Demand slider, the transport buttons (play/pause, step, reset) and the speed control. On the right, Share (copies the URL state) and a menu (theme, export JSON, about, the "what this models and leaves out" note).
 - **Variant panels**: two or three equal columns, each an island. Order inside a panel: a header (Variant label, plus pills for algorithm and key scope), the pipeline strip, the stat row, the charts, then the diagnosis slot. Panels line up vertically, so the same chart sits at the same height in every column and can be compared at a glance.
 - **Notes** sit on the paper below or between the panels, never inside an island.
-- **Ledger** at the bottom-left.
+- **Ledger** at the end of the page, after the notes.
 
 ### Mobile (below 640px)
 

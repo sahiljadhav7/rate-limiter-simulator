@@ -99,12 +99,11 @@
 }
 
 /*
- * Ledger (DESIGN.md "Ledger"): one status line at the bottom-left, kept in view while the page
- * scrolls. Its text is upper case already, apart from the s of seconds.
+ * Ledger (DESIGN.md "Ledger"): one status line at the end of the page, after the notes. It used
+ * to stick to the bottom of the screen, where it covered chart lines while the page scrolled.
+ * Its text is upper case already, apart from the s of seconds.
  */
 .ledger {
-  position: sticky;
-  bottom: var(--sp-3);
   justify-self: start;
   display: flex;
   flex-wrap: wrap;
