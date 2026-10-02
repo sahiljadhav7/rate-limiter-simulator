@@ -73,6 +73,7 @@ const stormAndBurst = {
  * Every Scenario at its default Demand and at 3x, as is and with "Retry at once" and "Back off
  * with jitter" on every Variant (seed as shipped, 120 s; .scratch/diagnosis/table-probe.ts).
  * Saturation fires in none of them: bursty traffic keeps the Backend under 26% busy over 5 s.
+ * So limit too loose, which needs a saturated Backend, fires in none of them either.
  */
 const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 10, undefined, [none, none]],

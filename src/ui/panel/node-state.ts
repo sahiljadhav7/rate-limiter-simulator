@@ -9,14 +9,15 @@ export type PipelineNode = 'client' | 'limiter' | 'backend'
 
 /**
  * The node each Failure Mode is about: saturation and queue overflow are the Backend busy and
- * losing work, a boundary burst is the Limiter letting too much through, and a retry storm is
- * the Clients sending more.
+ * losing work, a boundary burst and a limit too loose are the Limiter letting too much through,
+ * and a retry storm is the Clients sending more.
  */
 const NODE_OF: Readonly<Record<FailureMode, PipelineNode>> = {
   saturation: 'backend',
   'queue-overflow': 'backend',
   'boundary-burst': 'limiter',
   'retry-storm': 'client',
+  'limit-too-loose': 'limiter',
 }
 
 const WORD: Readonly<Record<Severity, string>> = { warn: 'STRUGGLING', broken: 'FAILING' }

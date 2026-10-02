@@ -177,13 +177,17 @@ describe('the saturation rule', () => {
     ])
   })
 
-  it('fires on Demand above the Backend ceiling (100/s against 80/s), Root Cause over queue overflow', () => {
+  // Behind a Limiter that lets everything through, limit too loose explains the saturation, so it
+  // is the Root Cause from RS-28 (.scratch/more-rules/spec.md decision 3); saturation still comes
+  // before queue overflow among the Symptoms.
+  it('fires on Demand above the Backend ceiling (100/s against 80/s), before queue overflow', () => {
     const { seen, last } = saturationEachSecond(scenario(100))
     const broken = seen.filter((f) => f?.severity === 'broken').length
     // Broken 95% to 100% of seconds over seeds 1 to 8 (.scratch/diagnosis/saturation-fixes.ts).
     expect(broken / seen.length).toBeGreaterThan(0.9)
     expect(last?.findings.map((f) => [f.id, f.role])).toEqual([
-      ['saturation', 'root-cause'],
+      ['limit-too-loose', 'root-cause'],
+      ['saturation', 'contributing'],
       ['queue-overflow', 'contributing'],
     ])
   })

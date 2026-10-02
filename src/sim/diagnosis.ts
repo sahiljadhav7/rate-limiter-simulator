@@ -15,7 +15,8 @@ import { QUICK_RETRY_MS, SNAPSHOT_MS, WARM_UP_MS, type Snapshot } from './metric
 import { rollingWindowCounts } from './window-counts.ts'
 
 /** A named way the simulated system goes wrong. */
-export type FailureMode = 'saturation' | 'queue-overflow' | 'boundary-burst' | 'retry-storm'
+export type FailureMode =
+  'saturation' | 'queue-overflow' | 'boundary-burst' | 'retry-storm' | 'limit-too-loose'
 
 /** A Cause is a design mistake; a Symptom is what it does to the system. */
 export type FindingKind = 'cause' | 'symptom'
@@ -31,6 +32,7 @@ export const FAILURE_MODES: Readonly<
   'queue-overflow': { label: 'Queue overflow', kind: 'symptom' },
   'boundary-burst': { label: 'Boundary burst', kind: 'cause' },
   'retry-storm': { label: 'Retry storm', kind: 'cause' },
+  'limit-too-loose': { label: 'Limit too loose', kind: 'cause' },
 }
 
 /**
@@ -235,6 +237,15 @@ export const RETRY_STORM_QUICK_SHARE = 0.6
  * Finding would start again at every burst.
  */
 export const RETRY_STORM_CLEAR_WINDOWS = 10
+
+/**
+ * The share of Attempts the Limiter rejected over the window under which, with the Backend
+ * saturated, it counts as letting everything through: limit too loose (spec decision 3). Where
+ * saturation fires behind a limit far above the Backend, 0.0% are rejected (the saturation
+ * fixture, seeds 1 to 8, .scratch/more-rules/spec.md "Measured"); a limit under the Backend's
+ * ceiling that still saturates it, 70/s against 80/s at Demand 100, rejects 22% to 36%.
+ */
+export const LIMIT_TOO_LOOSE_REJECTED_SHARE = 0.01
 
 /**
  * The first backoff, in ms, a fix gives a Retry Policy that had none: the same as the Retry
@@ -714,11 +725,69 @@ export function retryStormRule(retry: RetryPolicy): Rule {
   }
 }
 
+/**
+ * The limit too loose rule: the Backend saturated (the saturation rule's condition, with its
+ * thresholds and hysteresis) behind a Limiter that lets nearly everything through, or whose limit
+ * is at or above what the Backend can serve. A limit just over the Backend's ceiling still rejects
+ * some: 85/s against 80/s at Demand 100 rejects 7% to 22% with the Backend 97% to 100% busy
+ * (.scratch/more-rules/spec.md "Measured"), so the rejected share alone would miss it. As a Cause
+ * it explains the saturation Finding beside it.
+ */
+export function limitTooLooseRule(backend: BackendSpec, limiter: LimiterSpec): Rule {
+  const saturation = saturationRule(backend, limiter)
+  const ceiling = backendCeiling(backend)
+  const lower = lowerLimit(limiter, backend, ceiling * FIX_LOWER_LIMIT_SHARE)
+  const fixes: readonly Fix[] = [
+    // The saturation rule's lower-limit fix, measured on the same fixture: at 0.75 of the
+    // ceiling the Backend is never saturated, Goodput held at 60/s (.scratch/apply-fix/).
+    {
+      text: 'Try a limit below what the Backend can serve, with room to spare (it turns more away, but what gets through is quick)',
+      ...(lower !== null && { patch: { name: 'lower limit', limiter: lower } }),
+    },
+  ]
+  const rate = (perSecond: number) =>
+    `${Number.isInteger(perSecond) ? perSecond : perSecond.toFixed(1)}/s`
+
+  return {
+    id: 'limit-too-loose',
+    judge(window, allowed) {
+      // Judged every window, so the saturation rule's hysteresis follows the run.
+      const saturated = saturation.judge(window, allowed)
+      if (saturated === null) return null
+      const sum = (pick: (s: Snapshot) => number) => window.reduce((t, s) => t + pick(s), 0)
+      const offered = sum((s) => s.offeredLoad)
+      const share = offered === 0 ? 0 : sum((s) => s.rejected) / offered
+      const keys =
+        limiter.keyBy === 'client'
+          ? Math.max(1, Object.keys(window.at(-1)?.perClient ?? {}).length)
+          : 1
+      const allows = allowedPerSecond(limiter) * keys
+      if (share >= LIMIT_TOO_LOOSE_REJECTED_SHARE && allows < ceiling) return null
+      const busy = sum((s) => s.backendUtil) / window.length
+      return {
+        severity: saturated.severity,
+        evidence: [
+          { metric: 'Rejected', value: percent(share) },
+          { metric: 'Limiter allows', value: rate(allows) },
+          { metric: 'Backend can serve', value: rate(ceiling) },
+          { metric: 'Busy', value: percent(busy) },
+        ],
+        why:
+          `The Limiter allows ${rate(allows)} and turned away ${percent(share)} of Attempts, ` +
+          `but the Backend can serve only ${rate(ceiling)}, so it was busy ${percent(busy)} of ` +
+          'the time.',
+        fixes,
+      }
+    },
+  }
+}
+
 /** The rules every Variant is diagnosed with: boundary burst only behind a fixed window. */
 export function defaultRules({ backend, limiter, retry }: DiagnoserOptions): Rule[] {
   return [
     ...(limiter.algo === 'fixed-window' ? [boundaryBurstRule(limiter)] : []),
     retryStormRule(retry),
+    limitTooLooseRule(backend, limiter),
     saturationRule(backend, limiter),
     queueOverflowRule(backend, limiter),
   ]
