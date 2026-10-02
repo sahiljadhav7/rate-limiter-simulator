@@ -55,7 +55,14 @@ function severities(seconds: readonly (readonly [number, number | null])[]) {
       limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 },
       retry: { timeoutMs: 500, maxAttempts: 1, retry: 'none' },
     },
-    [saturationRule(backend)],
+    [
+      saturationRule(backend, {
+        algo: 'token-bucket',
+        keyBy: 'global',
+        capacity: 1,
+        refillPerSec: 1,
+      }),
+    ],
   )
   return seconds.map(([busy, p99], i) => {
     diagnoser.add(snapshot((6 + i) * 1000, busy, p99), allowed)
@@ -111,7 +118,14 @@ describe('the saturation rule', () => {
         limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 },
         retry: { timeoutMs: 500, maxAttempts: 1, retry: 'none' },
       },
-      [saturationRule(backend)],
+      [
+        saturationRule(backend, {
+          algo: 'token-bucket',
+          keyBy: 'global',
+          capacity: 1,
+          refillPerSec: 1,
+        }),
+      ],
     )
     for (let i = 0; i < 5; i++) diagnoser.add(snapshot((6 + i) * 1000, 0.97, 800), allowed)
     diagnoser.add(snapshot(11_000, 0.99, null), allowed)
@@ -129,7 +143,14 @@ describe('the saturation rule', () => {
         limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 },
         retry: { timeoutMs: 500, maxAttempts: 1, retry: 'none' },
       },
-      [saturationRule(backend)],
+      [
+        saturationRule(backend, {
+          algo: 'token-bucket',
+          keyBy: 'global',
+          capacity: 1,
+          refillPerSec: 1,
+        }),
+      ],
     )
     for (let i = 0; i < 5; i++) diagnoser.add(snapshot((6 + i) * 1000, 0.98, 806), allowed)
     const [finding] = diagnoser.findings()

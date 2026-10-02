@@ -5,11 +5,11 @@
  * of rules, one per Failure Mode, each with its own state and hysteresis, and ranks what they
  * find: one Root Cause, every other Finding Contributing.
  */
-import type { BackendSpec } from './backend.ts'
+import { backendCeiling, type BackendSpec } from './backend.ts'
 import { baselineP99Ms } from './baseline.ts'
 import type { AllowedSubBuckets } from './engine.ts'
 import { bucketAt } from './buckets.ts'
-import { allowedPerSecond, type FixedWindowSpec, type LimiterSpec } from './limiter.ts'
+import { allowedPerSecond, type FixedWindowSpec, type KeyBy, type LimiterSpec } from './limiter.ts'
 import type { RetryPolicy } from './retry-policy.ts'
 import { QUICK_RETRY_MS, SNAPSHOT_MS, WARM_UP_MS, type Snapshot } from './metrics.ts'
 import { rollingWindowCounts } from './window-counts.ts'
@@ -250,9 +250,42 @@ export const FIX_BASE_DELAY_MS = 100
  */
 export const FIX_LOWER_LIMIT_SHARE = 0.75
 
-/** A token bucket's capacity for a fix: half the Backend's queue, so a full bucket fits in it. */
-function smallCapacity({ queueLimit }: BackendSpec): number {
-  return Math.max(1, Math.floor(queueLimit / 2))
+/**
+ * A token bucket for a fix, at `refillPerSec` with a small capacity: half the Backend's queue, so
+ * a full bucket spent at once fits in it.
+ */
+function smallTokenBucket(keyBy: KeyBy, backend: BackendSpec, refillPerSec: number): LimiterSpec {
+  const capacity = Math.max(1, Math.floor(backend.queueLimit / 2))
+  return { algo: 'token-bucket', keyBy, capacity, refillPerSec }
+}
+
+/** The fix that doubles the Backend's slots, which queue overflow and saturation both list. */
+function moreSlots(backend: BackendSpec): Fix {
+  return {
+    text: 'Try more Backend slots',
+    patch: { name: 'more slots', backend: { slots: backend.slots * 2 } },
+  }
+}
+
+/**
+ * `limiter` with its long-run rate lowered to `perSecond`, keeping its algorithm and window, or
+ * null for one keyed per Client: what each Client may send depends on how many there are, which
+ * a rule does not know. A token bucket also gets a small capacity, or its full bucket would let
+ * a burst far over the new rate through.
+ */
+function lowerLimit(
+  limiter: LimiterSpec,
+  backend: BackendSpec,
+  perSecond: number,
+): LimiterSpec | null {
+  if (limiter.keyBy === 'client') return null
+  switch (limiter.algo) {
+    case 'token-bucket':
+      return smallTokenBucket('global', backend, perSecond)
+    case 'fixed-window':
+    case 'sliding-counter':
+      return { ...limiter, limit: Math.max(1, Math.round((perSecond * limiter.windowMs) / 1000)) }
+  }
 }
 
 /**
@@ -328,18 +361,10 @@ export function queueOverflowRule(backend: BackendSpec, limiter: LimiterSpec): R
       text: 'Try a Limiter that lets Attempts through at a steady pace instead of a whole window at once, such as a token bucket with a small capacity',
       patch: {
         name: 'token bucket',
-        limiter: {
-          algo: 'token-bucket',
-          keyBy: limiter.keyBy,
-          capacity: smallCapacity(backend),
-          refillPerSec: allowedPerSecond(limiter),
-        },
+        limiter: smallTokenBucket(limiter.keyBy, backend, allowedPerSecond(limiter)),
       },
     },
-    {
-      text: 'Try more Backend slots',
-      patch: { name: 'more slots', backend: { slots: backend.slots * 2 } },
-    },
+    moreSlots(backend),
     {
       text: 'Try a bigger queue (Attempts wait longer)',
       patch: { name: 'bigger queue', backend: { queueLimit: Math.max(1, queueLimit * 2) } },
@@ -392,35 +417,25 @@ export function queueOverflowRule(backend: BackendSpec, limiter: LimiterSpec): R
  * The saturation rule: the Backend busy nearly all the time over the window, with the newest
  * p99 far above what its service times alone would give, so Attempts are waiting for a slot.
  */
-export function saturationRule(backend: BackendSpec): Rule {
+export function saturationRule(backend: BackendSpec, limiter: LimiterSpec): Rule {
   const baseline = baselineP99Ms(backend)
-  const ceiling = backend.slots * (1000 / backend.meanMs)
+  const lower = lowerLimit(limiter, backend, backendCeiling(backend) * FIX_LOWER_LIMIT_SHARE)
   const fixes: readonly Fix[] = [
     // Ranked by what each did on the saturation fixture at 100/s, 1.25x its ceiling, seeds 1 to
     // 8 (.scratch/apply-fix/patch-probe.ts), against broken 106 to 111 s of 111 at 78 to 81/s
     // as is: twice the slots, never saturated and Goodput 98.6 to 101.2/s; half the service
-    // time, the same Goodput with the p99 down to 120 to 129 ms; a token bucket at 0.75 of the
-    // ceiling, never saturated but Goodput held at 60/s. The simulator has no cache, so
-    // "cheaper" is measured as a shorter service time.
-    {
-      text: 'Try more Backend slots',
-      patch: { name: 'more slots', backend: { slots: backend.slots * 2 } },
-    },
+    // time, the same Goodput with the p99 down to 120 to 129 ms; the same Limiter at 0.75 of
+    // the ceiling, never saturated as a token bucket or a sliding window counter, with Goodput
+    // held at 60 and 58.3 to 58.6/s, and as a fixed window warn for at most 9 s (and its own
+    // boundary burst). The simulator has no cache, so "cheaper" is a shorter service time.
+    moreSlots(backend),
     {
       text: 'Try making each Attempt cheaper for the Backend, such as with a cache',
       patch: { name: 'cheaper Attempts', backend: { meanMs: backend.meanMs / 2 } },
     },
     {
       text: 'Try a limit below what the Backend can serve (it turns more away, but what gets through is quick)',
-      patch: {
-        name: 'lower limit',
-        limiter: {
-          algo: 'token-bucket',
-          keyBy: 'global',
-          capacity: smallCapacity(backend),
-          refillPerSec: ceiling * FIX_LOWER_LIMIT_SHARE,
-        },
-      },
+      ...(lower !== null && { patch: { name: 'lower limit', limiter: lower } }),
     },
   ]
   let severity: Severity | null = null
@@ -533,6 +548,7 @@ export function boundaryBurstRule(limiter: FixedWindowSpec): Rule {
       text: 'Try a token bucket with a small capacity, such as half the limit, so a burst cannot spend a whole window at once',
       patch: {
         name: 'token bucket',
+        // Half the limit, not half the queue: what matters here is the burst at a window edge.
         limiter: {
           algo: 'token-bucket',
           keyBy,
@@ -630,7 +646,10 @@ export function retryStormRule(retry: RetryPolicy): Rule {
     },
     {
       text: 'Try fewer Attempts per Request, so each failure adds less traffic',
-      patch: { name: 'fewer Attempts', retry: { maxAttempts: Math.max(1, retry.maxAttempts - 1) } },
+      // With one Attempt there is nothing fewer to try.
+      ...(retry.maxAttempts > 1 && {
+        patch: { name: 'fewer Attempts', retry: { maxAttempts: retry.maxAttempts - 1 } },
+      }),
     },
   ]
   type Reading = {
@@ -700,7 +719,7 @@ export function defaultRules({ backend, limiter, retry }: DiagnoserOptions): Rul
   return [
     ...(limiter.algo === 'fixed-window' ? [boundaryBurstRule(limiter)] : []),
     retryStormRule(retry),
-    saturationRule(backend),
+    saturationRule(backend, limiter),
     queueOverflowRule(backend, limiter),
   ]
 }

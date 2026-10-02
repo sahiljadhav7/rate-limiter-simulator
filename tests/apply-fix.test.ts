@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyFix, removeFix } from '../src/runner/apply-fix.ts'
+import { applyFix, appliedFix, removeFix } from '../src/runner/apply-fix.ts'
 import { MAX_VARIANTS, variantBackend, type Scenario } from '../src/runner/scenario.ts'
 import type { Fix } from '../src/sim/diagnosis.ts'
 
@@ -127,5 +127,15 @@ describe('removeFix', () => {
 
   it('leaves a Scenario with no fix applied as it is', () => {
     expect(removeFix(scenario)).toEqual(scenario)
+  })
+})
+
+describe('appliedFix', () => {
+  it('is the Variant made by Apply fix, or undefined with none applied', () => {
+    expect(appliedFix(scenario)).toBeUndefined()
+    expect(appliedFix(applyFix(scenario, 1, moreSlots))).toMatchObject({
+      label: 'Token bucket, more slots',
+      fixOf: 'Token bucket',
+    })
   })
 })

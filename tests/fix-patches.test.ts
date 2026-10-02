@@ -173,3 +173,46 @@ describe.each(cases)('the fixes for %s', (_, scenario, index, mode, asIs, patche
     },
   )
 })
+
+describe('the lower-limit fix for saturation', () => {
+  const withLimiter = (limiter: Scenario['variants'][number]['limiter']): Scenario => ({
+    ...saturationFixture,
+    variants: [{ ...saturationFixture.variants[0]!, limiter }],
+  })
+
+  it('keeps a sliding window counter, at 0.75 of the 80/s ceiling, and clears saturation', () => {
+    const sc = withLimiter({
+      algo: 'sliding-counter',
+      keyBy: 'global',
+      limit: 1000,
+      windowMs: 1000,
+    })
+    const lower = fixesOf(sc, 0, 'saturation')[2]
+    expect(lower?.patch?.limiter).toEqual({
+      algo: 'sliding-counter',
+      keyBy: 'global',
+      limit: 60,
+      windowMs: 1000,
+    })
+    if (lower === undefined) throw new Error('Missing fix')
+    // Seeds 1 to 8: never saturated, Goodput 58.3 to 58.6/s.
+    const seen = measure(applyFix(sc, 0, lower), 1, 'saturation')
+    expect(seen).toMatchObject({ broken: 0, warn: 0 })
+    within(seen.goodput, [58.2, 58.7])
+  })
+
+  it('stays text for a Limiter keyed per Client, whose rate depends on how many Clients there are', () => {
+    const sc = withLimiter({
+      algo: 'token-bucket',
+      keyBy: 'client',
+      capacity: 10_000,
+      refillPerSec: 10_000,
+    })
+    const fixes = fixesOf(sc, 0, 'saturation')
+    expect(fixes.map((fix) => fix.patch?.name)).toEqual([
+      'more slots',
+      'cheaper Attempts',
+      undefined,
+    ])
+  })
+})

@@ -197,7 +197,7 @@ Labels inside the card use `--text-dim`: `--text-faint` on `--warn-soft` is 4.36
 ```
 
 - **Top bar**: three islands spaced `--sp-3` from the viewport edges. On the left, the name and a Scenario picker. In the middle, the Demand slider, the transport buttons (play/pause, step, reset) and the speed control. On the right, Share (copies the URL state) and a menu (theme, export JSON, about, the "what this models and leaves out" note).
-- **Variant panels**: two or three equal columns, each an island. Order inside a panel: a header (Variant label, plus pills for algorithm and key scope; a Variant made by Apply fix adds a FIX APPLIED pill in `--accent-ink` on `--accent-soft` and a **Remove fix** button, which restarts without it and moves focus back to the original), the pipeline strip, the stat row, the charts, then the diagnosis slot. Panels line up vertically, so the same chart sits at the same height in every column and can be compared at a glance.
+- **Variant panels**: two or three equal columns, each an island. Order inside a panel: a header (Variant label, plus pills for algorithm and key scope; a Variant made by Apply fix adds a FIX APPLIED pill in `--accent-ink` on `--accent-soft` and a **Remove fix** button, which restarts without it and moves focus back to the original; its Retry Policy is shown as text, as it is part of the fix, and changing the original's Retry Policy restarts without the fix), the pipeline strip, the stat row, the charts, then the diagnosis slot. Panels line up vertically, so the same chart sits at the same height in every column and can be compared at a glance.
 - **Notes** sit on the paper below or between the panels, never inside an island.
 - **Ledger** at the end of the page, after the notes.
 

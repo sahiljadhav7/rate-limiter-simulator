@@ -113,6 +113,14 @@ export function checkBackendSpec(spec: BackendSpec): void {
 }
 
 /**
+ * The most Attempts per second the Backend can serve with every slot busy: slots x (1000 / mean
+ * ms). Its ceiling on average; a busy second can do more or less as service times vary.
+ */
+export function backendCeiling({ slots, meanMs }: BackendSpec): number {
+  return slots * (1000 / meanMs)
+}
+
+/**
  * Creates an idle Backend. Service times are drawn from `stream`, which must be the
  * `service` stream. Throws a RangeError if the spec is invalid.
  */

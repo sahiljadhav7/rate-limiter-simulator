@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { applyFix, removeFix } from '../runner/apply-fix.ts'
+import { applyFix, appliedFix, removeFix } from '../runner/apply-fix.ts'
 import { variantBackend, type Scenario } from '../runner/scenario.ts'
 import type { Fix } from '../sim/index.ts'
 import { demandAt } from './controls/demand.ts'
@@ -143,23 +143,29 @@ function ScenarioRun(props: {
   const onApplyFix = useCallback(
     (index: number, fix: Fix) => {
       const next = applyFix(scenario, index, fix)
-      const fixed = next.variants.find((v) => v.fixOf !== undefined)
-      restartTo(next, fixed?.label ?? '')
+      const fixed = appliedFix(next)
+      if (fixed) restartTo(next, fixed.label)
     },
     [restartTo, scenario],
   )
   const onRemoveFix = useCallback(() => {
-    const original = scenario.variants.find((v) => v.fixOf !== undefined)?.fixOf
-    restartTo(removeFix(scenario), original ?? '')
+    const original = appliedFix(scenario)?.fixOf
+    if (original !== undefined) restartTo(removeFix(scenario), original)
   }, [restartTo, scenario])
   const onSeed = useCallback(
     (seed: number) => restartWith({ ...scenario, seed }),
     [restartWith, scenario],
   )
+  /**
+   * Only an original Variant has the dropdown: a fixed one's policy is part of its fix. A change
+   * drops an applied fix, which was made from the old policy and would differ in two ways.
+   */
   const onRetryMode = useCallback(
     (index: number, mode: RetryMode) => {
       const retry = scenario.variants[index]?.retry
-      if (retry) restartWith(withVariantRetry(scenario, index, withRetryMode(retry, mode)))
+      if (retry) {
+        restartWith(removeFix(withVariantRetry(scenario, index, withRetryMode(retry, mode))))
+      }
     },
     [restartWith, scenario],
   )

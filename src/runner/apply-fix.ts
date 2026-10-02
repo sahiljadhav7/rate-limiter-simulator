@@ -51,8 +51,13 @@ export function applyFix(scenario: Scenario, index: number, fix: Fix): Scenario 
   return next
 }
 
+/** The Variant made by Apply fix, or undefined when no fix is applied. */
+export function appliedFix(scenario: Scenario): VariantConfig | undefined {
+  return scenario.variants.find((v) => v.fixOf !== undefined)
+}
+
 /** `scenario` without its applied fix, as authored. A Scenario with none is returned as it is. */
 export function removeFix(scenario: Scenario): Scenario {
-  if (scenario.variants.every((v) => v.fixOf === undefined)) return scenario
+  if (appliedFix(scenario) === undefined) return scenario
   return { ...scenario, variants: scenario.variants.filter((v) => v.fixOf === undefined) }
 }

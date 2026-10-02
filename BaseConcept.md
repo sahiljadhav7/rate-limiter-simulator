@@ -30,7 +30,7 @@ A teaching tool, not a production limiter. Nothing real is sent over a network. 
 **60-second demo (three things to show):**
 1. **Boundary burst** (about 15 s): fixed window vs sliding window on the same Edge Burst traffic (bursts timed to straddle the window reset); the fixed-window Variant admits about 2x the limit within one window-length, the sliding-window Variant does not.
 2. **Backend overload** (about 20 s): sliding window counter vs token bucket, both 70/s in front of a Backend that serves 80/s, on bursty traffic; raise Demand and the sliding window counter's Backend turns red and shakes as it sheds Attempts, while the token bucket's stays healthy.
-3. **Diagnosis card** (about 25 s): the app names the failure, shows the evidence numbers, and one click re-runs with the fix. *(Shipped 2026-10-01 without the click: Edge burst shows a boundary burst card on the fixed window (Root Cause, broken, 2.0×), Backend overload at 30/s a queue overflow card on the sliding window counter, and switching both to "Retry at once" adds a retry storm as the Root Cause. "Apply fix and re-run" still needs RS-27.)*
+3. **Diagnosis card** (about 25 s): the app names the failure, shows the evidence numbers, and one click re-runs with the fix. *(Shipped 2026-10-01 without the click: Edge burst shows a boundary burst card on the fixed window (Root Cause, broken, 2.0×), Backend overload at 30/s a queue overflow card on the sliding window counter, and switching both to "Retry at once" adds a retry storm as the Root Cause. The click came with RS-27 on 2026-10-02: Apply fix runs the fix beside the original from 0.)*
 
 The retry storm was demo item 2 until 2026-10-01; it is deferred to stretch (2026-10-01): measured in RS-12, immediate retry against backoff with jitter does not give "Goodput collapses in one Variant only". Once a Backend's full queue waits longer than the timeout, both Variants stay collapsed after the overload ends, and only no retry (or fewer Attempts, or a shorter queue) recovers. The current model does not reliably show the intended lesson, so it is not shipped as if ready; redesign its Variants from `tests/retry-storm.test.ts` first.
 
@@ -171,7 +171,14 @@ interface PastFinding extends Finding {
 
 interface Fix {
   text: string;
-  patch?: Partial<VariantConfig>;                   // optional: one-click "apply and re-run"
+  patch?: FixPatch;                                 // only when measured to help: one-click "Apply fix"
+}
+
+interface FixPatch {
+  name: string;                                     // added to the label: "Sliding window counter, more slots"
+  limiter?: LimiterSpec;                            // a different Limiter
+  retry?: Partial<RetryPolicy>;                     // changes to the Retry Policy
+  backend?: Partial<BackendSpec>;                   // the fixed Variant's own Backend (VariantConfig.backend)
 }
 ```
 
@@ -197,7 +204,7 @@ interface Fix {
 - Fixes are phrased as "try", not "will", because they are suggestions for this simulated system.
 
 ### What the user sees
-When a finding appears (`warn` or `broken`): a vertical marker on every chart of the Variant at `startedAt`, with a pill on the top chart that moves to the card; a card with the label, severity and evidence numbers; a **Why** text built from a template plus actual values (e.g. "Offered Load reached 2.4× Demand because 71% of retry Attempts came within 10 ms of the failure that caused them"); ranked **How to fix** options, each with **Apply and re-run** when a `patch` exists. Applying a fix creates a new Variant that runs from t=0 in a panel beside the original, on the same seeded traffic, so the improvement is visible.
+When a finding appears (`warn` or `broken`): a vertical marker on every chart of the Variant at `startedAt`, with a pill on the top chart that moves to the card; a card with the label, severity and evidence numbers; a **Why** text built from a template plus actual values (e.g. "Offered Load reached 2.4× Demand because 71% of retry Attempts came within 10 ms of the failure that caused them"); ranked **How to fix** options, each with **Apply fix** when a `patch` exists. Applying a fix creates a new Variant right after the original and restarts the whole run from t=0 at the current Demand, on the same seeded traffic, so the original replays exactly and the improvement (or its cost) is measured beside it. One fix at a time: applying another replaces it, and **Remove fix** on the fixed panel returns to the Variants as authored. The share link sets up the run as authored, without the fix. *(Shipped 2026-10-02: all 11 fixes of the four rules have patches, each measured to clear or soften its Finding on the setup that triggers it, `.scratch/apply-fix/`.)*
 
 ## Fidelity: how close to real
 
@@ -495,7 +502,7 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
   - *Note (2026-10-01):* built with saturation, retry storm and boundary burst beside queue overflow (`.scratch/diagnosis/`). Noisy neighbor moved to RS-28: as written it fired with nothing wrong (55% for one of three Clients in calm Backend overload, up to 81% in Edge burst, whose scripted bursts all come from one Client), so it needs a greedy-Client fixture from RS-19b first.
 - **RS-25 Diagnosis tests [Day 3]** (1.5h): one triggering and one healthy fixture per core rule, in `tests/`. *Depends on RS-24.*
 - **RS-26 Diagnosis UI card + chart markers [Day 3]** (1.5h): label, severity, evidence, why, ranked fixes; vertical marker at `startedAt`. *Depends on RS-16, RS-17, RS-24.* Built 2026-10-01.
-- **RS-27 "Apply fix and re-run" [Stretch]** (1.5h): applies a `patch` to create a new Variant and starts it from t=0 beside the original on the same seeded traffic. *Depends on RS-15, RS-26.*
+- **RS-27 "Apply fix and re-run" [Stretch]** (1.5h): applies a `patch` to create a new Variant and starts it from t=0 beside the original on the same seeded traffic. *Depends on RS-15, RS-26.* *(Done 2026-10-02: a patch may change the Limiter, the Retry Policy or the fixed Variant's own Backend; the run restarts with the fixed Variant beside its original; Remove fix; `.scratch/apply-fix/`.)*
 - **RS-28 Remaining diagnosis rules [Stretch]** (2h): limit too loose, limit too tight, distributed over-admit, goodput collapse, noisy neighbor (moved from RS-24), each with fixtures. *Depends on RS-24, RS-25.*
   - *Note (2026-10-01):* queue overflow was built early, with the Backend overload Scenario (`.scratch/backend-overload/`). "Shed count > 0" fired on a healthy fixed window at its calm default (9 shed in 2 minutes), so the rule is a share with thresholds instead.
 

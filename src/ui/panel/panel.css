@@ -308,6 +308,14 @@
   margin-left: auto;
 }
 
+/* A fixed Variant's Retry Policy, shown rather than chosen: as tall as the dropdown it replaces. */
+.retry .retry-fixed {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  font-weight: var(--fw-med);
+}
+
 /*
  * A struggling or failing node (DESIGN.md "Pipeline node"). Only a Finding sets data-state, and
  * the word after the name says it too, so the state never rests on colour alone. These rules set

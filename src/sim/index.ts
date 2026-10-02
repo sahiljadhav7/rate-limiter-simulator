@@ -10,7 +10,7 @@
  * cannot make a stream outside the named set or time arrivals on its own; engine modules and
  * tests import them from their own files.
  */
-export { checkBackendSpec, type BackendSpec } from './backend.ts'
+export { backendCeiling, checkBackendSpec, type BackendSpec } from './backend.ts'
 export { checkNonNegative, checkPositive } from './checks.ts'
 export { createSimClock, type SimClock } from './clock.ts'
 export {

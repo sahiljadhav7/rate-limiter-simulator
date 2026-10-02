@@ -148,19 +148,26 @@ export const VariantPanel = memo(function VariantPanel(props: VariantPanelProps)
           <label className="label" htmlFor={retryId}>
             Retry Policy
           </label>
-          <select
-            id={retryId}
-            className="field"
-            value={config.retry.retry}
-            title="Changing it restarts the run from 0"
-            onChange={(event) => onRetryMode(index, event.currentTarget.value as RetryMode)}
-          >
-            {RETRY_MODES.map(({ mode, name }) => (
-              <option key={mode} value={mode}>
-                {name}
-              </option>
-            ))}
-          </select>
+          {config.fixOf === undefined ? (
+            <select
+              id={retryId}
+              className="field"
+              value={config.retry.retry}
+              title="Changing it restarts the run from 0, without an applied fix"
+              onChange={(event) => onRetryMode(index, event.currentTarget.value as RetryMode)}
+            >
+              {RETRY_MODES.map(({ mode, name }) => (
+                <option key={mode} value={mode}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            // A fixed Variant's policy is part of its fix, so it is shown, not chosen.
+            <output id={retryId} className="retry-fixed">
+              {RETRY_MODES.find(({ mode }) => mode === config.retry.retry)?.name}
+            </output>
+          )}
         </span>
       </header>
       <PipelineStrip stats={stats} backend={backendState} />
