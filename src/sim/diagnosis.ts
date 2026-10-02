@@ -286,13 +286,18 @@ export const LIMIT_TOO_TIGHT_OVER_SECONDS = 6
  */
 export const LIMIT_TOO_TIGHT_WARN_REJECTED = 0.3
 
-/** The rejected share for `broken`: the Limiter turns away most of what arrives. */
+/**
+ * The rejected share for `broken`: the Limiter turns away most of what arrives. The fixture, a
+ * limit of 20/s against 50/s, rejects 54% to 67% over every 10 s (seeds 1 to 8), so it is broken
+ * throughout; a limit nearer the Demand, rejecting 30% to 50%, is amber.
+ */
 export const LIMIT_TOO_TIGHT_BROKEN_REJECTED = 0.5
 
 /**
  * Limit too tight leaves a severity only once the rejected share falls this far below the
  * threshold that entered it (broken under 45%, warn under 25%), so a share near a threshold does
- * not flicker.
+ * not flicker. The fixture's 10 s shares move by up to 13 points (54% to 67%), so 5 keeps one
+ * unlucky span from dropping a level.
  */
 export const LIMIT_TOO_TIGHT_REJECTED_MARGIN = 0.05
 
@@ -305,6 +310,13 @@ export const LIMIT_TOO_TIGHT_REJECTED_MARGIN = 0.05
 export const LIMIT_TOO_TIGHT_IDLE_BUSY = 0.4
 
 /**
+ * Once limit too tight is active, how far its two gates may slip before it clears: the Backend
+ * may be up to 5 points busier (under 45%), and Demand over the limit in one second fewer (5 of
+ * 10), so a span sitting on a gate does not flicker. A burst still fills at most 3 seconds.
+ */
+export const LIMIT_TOO_TIGHT_GATE_MARGIN = { busy: 0.05, seconds: 1 } as const
+
+/**
  * Goodput over its own running peak, over the 5 s window, under which goodput collapse becomes
  * `warn`: half of what this Variant has shown it can do. A saturated Backend that still serves
  * never drops below 0.75x (the saturation fixture at 100/s, 68 to 89/s against a peak of 85 to
@@ -313,7 +325,11 @@ export const LIMIT_TOO_TIGHT_IDLE_BUSY = 0.4
  */
 export const GOODPUT_COLLAPSE_WARN_RATIO = 0.5
 
-/** The ratio for `broken`: under a quarter of the peak. */
+/**
+ * The ratio for `broken`: under a quarter of the peak. The collapse fixture passes 0.23x within
+ * 5 s of the rise and stays at 0.00x (seeds 1 to 8), so it is broken from then on; a Backend that
+ * loses some work but still finishes most of it sits between this and the warn ratio.
+ */
 export const GOODPUT_COLLAPSE_BROKEN_RATIO = 0.25
 
 /**
@@ -332,6 +348,12 @@ export const GOODPUT_COLLAPSE_RATIO_MARGIN = 0.1
 export const GOODPUT_COLLAPSE_BUSY = 0.8
 
 /**
+ * Once goodput collapse is active, how far busy may fall before it clears: to 75%, as saturation
+ * leaves 5 points under what entered it, so a Backend sitting near 80% does not flicker.
+ */
+export const GOODPUT_COLLAPSE_BUSY_MARGIN = 0.05
+
+/**
  * How many of the newest Snapshots noisy neighbor judges, and in how many of them the top Client
  * must have sent more than its fair share of the limit: all 10, so its greed is steady. Edge
  * burst's scripted bursts all come from one Client, which then takes up to 98% of what is
@@ -344,7 +366,8 @@ export const NOISY_NEIGHBOR_SECONDS = 10
 /**
  * The top Client's share of allowed Attempts over the 10 s above which it may be a noisy neighbor
  * (BaseConcept: 50%). With no greedy Client the top one has 38% to 53% (Edge burst at 3x,
- * Backend overload); the greedy fixture's, 81% to 88%.
+ * Backend overload), which can pass it; the steady and crowding conditions are what keep those
+ * quiet, while this one names whose share it is. The greedy fixture's top Client has 81% to 88%.
  */
 export const NOISY_NEIGHBOR_TOP_SHARE = 0.5
 
@@ -357,12 +380,17 @@ export const NOISY_NEIGHBOR_TOP_SHARE = 0.5
  */
 export const NOISY_NEIGHBOR_WARN_REJECTED = 0.1
 
-/** The others' rejected share for `broken`: one in five of their Attempts turned away. */
+/**
+ * The others' rejected share for `broken`: one in five of their Attempts turned away. The greedy
+ * fixture's others lose 17% to 46% over 10 s (seeds 1 to 8); with the margin below, a span
+ * dipping to 17% stays broken, so it is broken in more than 90% of seconds.
+ */
 export const NOISY_NEIGHBOR_BROKEN_REJECTED = 0.2
 
 /**
  * Noisy neighbor leaves a severity only once the others' rejected share falls this far under
- * the threshold that entered it (broken under 15%, warn under 5%).
+ * the threshold that entered it (broken under 15%, warn under 5%), so a share near a threshold
+ * does not flicker: the fixture's 10 s shares swing by up to 29 points.
  */
 export const NOISY_NEIGHBOR_REJECTED_MARGIN = 0.05
 
@@ -489,6 +517,50 @@ export interface Diagnoser {
 function rateText(perSecond: number): string {
   const n = Number.isInteger(perSecond) ? perSecond.toLocaleString('en-US') : perSecond.toFixed(1)
   return `${n}/s`
+}
+
+/** A measured rate, to one decimal: "46.1/s". */
+function perSecondText(perSecond: number): string {
+  return `${perSecond.toFixed(1)}/s`
+}
+
+/**
+ * What the Limiter allows a second over all its keys, as of `snapshot`: its long-run rate, times
+ * the Clients seen so far when it counts each Client on its own.
+ */
+function allowedOverKeys(limiter: LimiterSpec, snapshot: Snapshot | undefined): number {
+  const keys =
+    limiter.keyBy === 'client' ? Math.max(1, Object.keys(snapshot?.perClient ?? {}).length) : 1
+  return allowedPerSecond(limiter) * keys
+}
+
+/**
+ * Severity with hysteresis for a rule judged by one number against two thresholds: a level is
+ * entered past its threshold and left only once the number is `margin` back on the healthy side,
+ * so a value near a threshold does not flicker. `worse` says which way is worse. The returned
+ * function takes each span's value, or null when the rule's other conditions do not hold, which
+ * clears it.
+ */
+function createLevels(levels: {
+  readonly warn: number
+  readonly broken: number
+  readonly margin: number
+  readonly worse: 'above' | 'below'
+}) {
+  const { warn, broken, margin } = levels
+  const sign = levels.worse === 'above' ? 1 : -1
+  /** How far `value` is past `threshold` on the worse side; positive is past it. */
+  const past = (value: number, threshold: number) => sign * (value - threshold)
+  let severity: Severity | null = null
+  return (value: number | null): Severity | null => {
+    if (value === null) severity = null
+    else if (past(value, broken) > 0 || (severity === 'broken' && past(value, broken) > -margin)) {
+      severity = 'broken'
+    } else if (past(value, warn) > 0 || (severity !== null && past(value, warn) > -margin)) {
+      severity = 'warn'
+    } else severity = null
+    return severity
+  }
 }
 
 function percent(share: number): string {
@@ -895,11 +967,7 @@ export function limitTooLooseRule(backend: BackendSpec, limiter: LimiterSpec): R
       const sum = (pick: (s: Snapshot) => number) => window.reduce((t, s) => t + pick(s), 0)
       const offered = sum((s) => s.offeredLoad)
       const share = offered === 0 ? 0 : sum((s) => s.rejected) / offered
-      const keys =
-        limiter.keyBy === 'client'
-          ? Math.max(1, Object.keys(window.at(-1)?.perClient ?? {}).length)
-          : 1
-      const allows = allowedPerSecond(limiter) * keys
+      const allows = allowedOverKeys(limiter, window.at(-1))
       if (share >= LIMIT_TOO_LOOSE_REJECTED_SHARE && allows < ceiling) return null
       const busy = sum((s) => s.backendUtil) / window.length
       return {
@@ -943,7 +1011,6 @@ function createRecent(count: number) {
  */
 export function limitTooTightRule(backend: BackendSpec, limiter: LimiterSpec): Rule {
   const newest = createRecent(LIMIT_TOO_TIGHT_SECONDS)
-  let severity: Severity | null = null
   const higher = limitAt(limiter, backend, backendCeiling(backend) * FIX_LIMIT_SHARE)
   const raises = higher !== null && allowedPerSecond(higher) > allowedPerSecond(limiter)
   const fixes: readonly Fix[] = [
@@ -957,36 +1024,35 @@ export function limitTooTightRule(backend: BackendSpec, limiter: LimiterSpec): R
     },
   ]
 
-  /** The severity after a span that rejected `share`, given the one before. */
-  function nextSeverity(share: number): Severity | null {
-    const margin = LIMIT_TOO_TIGHT_REJECTED_MARGIN
-    const broken = LIMIT_TOO_TIGHT_BROKEN_REJECTED
-    const warn = LIMIT_TOO_TIGHT_WARN_REJECTED
-    if (share > broken || (severity === 'broken' && share > broken - margin)) return 'broken'
-    if (share > warn || (severity !== null && share > warn - margin)) return 'warn'
-    return null
-  }
+  /** The severity after a span that rejected a share, given the one before. */
+  /** Whether it is active after the last span, so its gates hold with a margin. */
+  let active = false
+  const level = createLevels({
+    warn: LIMIT_TOO_TIGHT_WARN_REJECTED,
+    broken: LIMIT_TOO_TIGHT_BROKEN_REJECTED,
+    margin: LIMIT_TOO_TIGHT_REJECTED_MARGIN,
+    worse: 'above',
+  })
 
   return {
     id: 'limit-too-tight',
     judge(window) {
       const recent = newest(window)
       if (recent === null) return null
-      const keys =
-        limiter.keyBy === 'client'
-          ? Math.max(1, Object.keys(recent.at(-1)?.perClient ?? {}).length)
-          : 1
-      const allows = allowedPerSecond(limiter) * keys
+      const allows = allowedOverKeys(limiter, recent.at(-1))
       const sum = (pick: (s: Snapshot) => number) => recent.reduce((t, s) => t + pick(s), 0)
       const overSeconds = recent.filter((s) => s.demand > allows).length
       const offered = sum((s) => s.offeredLoad)
       const share = offered === 0 ? 0 : sum((s) => s.rejected) / offered
       const busy = sum((s) => s.backendUtil) / recent.length
-      const steady = overSeconds >= LIMIT_TOO_TIGHT_OVER_SECONDS
-      severity = steady && busy < LIMIT_TOO_TIGHT_IDLE_BUSY ? nextSeverity(share) : null
+      // Once active, each gate holds with a margin (LIMIT_TOO_TIGHT_GATE_MARGIN).
+      const held = active ? LIMIT_TOO_TIGHT_GATE_MARGIN : { busy: 0, seconds: 0 }
+      const steady = overSeconds >= LIMIT_TOO_TIGHT_OVER_SECONDS - held.seconds
+      const idle = busy < LIMIT_TOO_TIGHT_IDLE_BUSY + held.busy
+      const severity = level(steady && idle ? share : null)
+      active = severity !== null
       if (severity === null) return null
       const demand = sum((s) => s.demand) / recent.length
-      const perSecond = (n: number) => `${n.toFixed(1)}/s`
       const allowsText = rateText(allows)
       const which =
         overSeconds === LIMIT_TOO_TIGHT_SECONDS
@@ -996,7 +1062,7 @@ export function limitTooTightRule(backend: BackendSpec, limiter: LimiterSpec): R
         severity,
         evidence: [
           { metric: 'Rejected', value: percent(share) },
-          { metric: 'Demand', value: perSecond(demand) },
+          { metric: 'Demand', value: perSecondText(demand) },
           { metric: 'Limiter allows', value: allowsText },
           {
             metric: 'Seconds over the limit',
@@ -1006,7 +1072,7 @@ export function limitTooTightRule(backend: BackendSpec, limiter: LimiterSpec): R
         ],
         why:
           `${which} more new Requests ` +
-          `arrived than the Limiter allows (${perSecond(demand)} against ${allowsText}), so it ` +
+          `arrived than the Limiter allows (${perSecondText(demand)} against ${allowsText}), so it ` +
           `turned away ${percent(share)} of Attempts while the Backend was busy only ` +
           `${percent(busy)} of the time.`,
         fixes,
@@ -1027,7 +1093,6 @@ export function goodputCollapseRule(
 ): Rule {
   const { slots } = backend
   let peak = 0
-  let severity: Severity | null = null
   const queue = Math.floor(((slots * retry.timeoutMs) / backend.meanMs) * FIX_QUEUE_WAIT_SHARE)
   const lower = limitAt(limiter, backend, backendCeiling(backend) * FIX_LIMIT_SHARE)
   const fixes: readonly Fix[] = [
@@ -1050,15 +1115,15 @@ export function goodputCollapseRule(
     },
   ]
 
-  /** The severity after a window at `ratio` of the peak, given the one before. */
-  function nextSeverity(ratio: number): Severity | null {
-    const margin = GOODPUT_COLLAPSE_RATIO_MARGIN
-    const broken = GOODPUT_COLLAPSE_BROKEN_RATIO
-    const warn = GOODPUT_COLLAPSE_WARN_RATIO
-    if (ratio < broken || (severity === 'broken' && ratio < broken + margin)) return 'broken'
-    if (ratio < warn || (severity !== null && ratio < warn + margin)) return 'warn'
-    return null
-  }
+  /** The severity after a window at a ratio of the peak, given the one before. */
+  /** Whether it is active after the last window, so its busy gate holds with a margin. */
+  let active = false
+  const level = createLevels({
+    warn: GOODPUT_COLLAPSE_WARN_RATIO,
+    broken: GOODPUT_COLLAPSE_BROKEN_RATIO,
+    margin: GOODPUT_COLLAPSE_RATIO_MARGIN,
+    worse: 'below',
+  })
 
   return {
     id: 'goodput-collapse',
@@ -1068,22 +1133,25 @@ export function goodputCollapseRule(
       peak = Math.max(peak, goodput)
       const busy = sum((s) => s.backendUtil) / window.length
       // With no Goodput yet there is nothing to have collapsed from.
-      severity = peak > 0 && busy >= GOODPUT_COLLAPSE_BUSY ? nextSeverity(goodput / peak) : null
+      const busyEnough = busy >= GOODPUT_COLLAPSE_BUSY - (active ? GOODPUT_COLLAPSE_BUSY_MARGIN : 0)
+      const severity = level(peak > 0 && busyEnough ? goodput / peak : null)
+      active = severity !== null
       if (severity === null) return null
-      // Wasted Work as a share of busy slot time, both in slot ms; busy is 80% or more here.
+      // Wasted Work as a share of busy slot time, both in slot ms; busy is 80% or more here. The
+      // Backend books wasted time only on busy slots, over the same spans as busy time, so the
+      // share cannot pass 1 but for float rounding in the two differences, which the cap absorbs.
       const busySlotMs = sum((s) => s.backendUtil) * slots * SNAPSHOT_MS
       const wastedShare = Math.min(1, sum((s) => s.wastedWorkMs) / busySlotMs)
-      const perSecond = (n: number) => `${n.toFixed(1)}/s`
       return {
         severity,
         evidence: [
-          { metric: 'Goodput', value: perSecond(goodput) },
-          { metric: 'Its peak', value: perSecond(peak) },
+          { metric: 'Goodput', value: perSecondText(goodput) },
+          { metric: 'Its peak', value: perSecondText(peak) },
           { metric: 'Busy', value: percent(busy) },
           { metric: 'Wasted Work', value: percent(wastedShare) },
         ],
         why:
-          `Goodput fell to ${perSecond(goodput)} from a peak of ${perSecond(peak)} while the ` +
+          `Goodput fell to ${perSecondText(goodput)} from a peak of ${perSecondText(peak)} while the ` +
           `Backend stayed ${percent(busy)} busy: ${percent(wastedShare)} of its time went on ` +
           'Attempts whose callers had already given up.',
         fixes,
@@ -1100,7 +1168,6 @@ export function goodputCollapseRule(
  */
 export function noisyNeighborRule(limiter: LimiterSpec): Rule {
   const newest = createRecent(NOISY_NEIGHBOR_SECONDS)
-  let severity: Severity | null = null
   const limit = allowedPerSecond(limiter)
   const fixes: readonly Fix[] = [
     // On the fixture (greedy Client a, 60/s, a global limit of 40/s; seeds 1 to 8,
@@ -1115,15 +1182,13 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
     { text: 'Try weighted fair queuing, so each Client gets its turn (not modelled here)' },
   ]
 
-  /** The severity after a span where the others lost `share`, given the one before. */
-  function nextSeverity(share: number): Severity | null {
-    const margin = NOISY_NEIGHBOR_REJECTED_MARGIN
-    const broken = NOISY_NEIGHBOR_BROKEN_REJECTED
-    const warn = NOISY_NEIGHBOR_WARN_REJECTED
-    if (share > broken || (severity === 'broken' && share > broken - margin)) return 'broken'
-    if (share > warn || (severity !== null && share > warn - margin)) return 'warn'
-    return null
-  }
+  /** The severity after a span where the others lost a share, given the one before. */
+  const level = createLevels({
+    warn: NOISY_NEIGHBOR_WARN_REJECTED,
+    broken: NOISY_NEIGHBOR_BROKEN_REJECTED,
+    margin: NOISY_NEIGHBOR_REJECTED_MARGIN,
+    worse: 'above',
+  })
 
   return {
     id: 'noisy-neighbor',
@@ -1142,23 +1207,22 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
       const [topEntry] = ranked
       const allowedAll = ranked.reduce((t, [, c]) => t + c.allowed, 0)
       if (topEntry === undefined || ranked.length < 2 || allowedAll === 0) {
-        severity = null
+        level(null)
         return null
       }
-      const [top, mine] = topEntry
+      const [top, topTotals] = topEntry
       const clients = ranked.length
       const fairShare = limit / clients
-      const topShare = mine.allowed / allowedAll
+      const topShare = topTotals.allowed / allowedAll
       const steady = recent.every((s) => (s.perClient[top]?.offeredLoad ?? 0) > fairShare)
-      const othersOffered = ranked.reduce((t, [, c]) => t + c.offered, 0) - mine.offered
+      const othersOffered = ranked.reduce((t, [, c]) => t + c.offered, 0) - topTotals.offered
       const othersPerSecond = othersOffered / recent.length
       const othersFair = fairShare * (clients - 1)
       const othersRejected =
-        othersOffered === 0 ? 0 : 1 - (allowedAll - mine.allowed) / othersOffered
+        othersOffered === 0 ? 0 : 1 - (allowedAll - topTotals.allowed) / othersOffered
       const crowded = topShare > NOISY_NEIGHBOR_TOP_SHARE && steady && othersPerSecond < othersFair
-      severity = crowded ? nextSeverity(othersRejected) : null
+      const severity = level(crowded ? othersRejected : null)
       if (severity === null) return null
-      const perSecond = (n: number) => `${n.toFixed(1)}/s`
       const limitText = rateText(limit)
       return {
         severity,
@@ -1167,15 +1231,15 @@ export function noisyNeighborRule(limiter: LimiterSpec): Rule {
           { metric: 'Its share of allowed', value: percent(topShare) },
           {
             metric: 'Others sent',
-            value: `${perSecond(othersPerSecond)} of a fair ${perSecond(othersFair)}`,
+            value: `${perSecondText(othersPerSecond)} of a fair ${perSecondText(othersFair)}`,
           },
           { metric: 'Others rejected', value: percent(othersRejected) },
         ],
         why:
-          `Client ${top} sent more than its fair share of the limit (${perSecond(fairShare)}, ` +
+          `Client ${top} sent more than its fair share of the limit (${perSecondText(fairShare)}, ` +
           `${limitText} shared by ${clients} Clients) in each of the last ` +
           `${NOISY_NEIGHBOR_SECONDS} seconds and got ${percent(topShare)} of what the Limiter ` +
-          `allowed, so the other Clients, sending ${perSecond(othersPerSecond)} between them, ` +
+          `allowed, so the other Clients, sending ${perSecondText(othersPerSecond)} between them, ` +
           `had ${percent(othersRejected)} of their Attempts rejected.`,
         fixes,
       }
