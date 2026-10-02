@@ -8,9 +8,10 @@ import type { FailureMode, Finding, Severity } from '../../sim/index.ts'
 export type PipelineNode = 'client' | 'limiter' | 'backend'
 
 /**
- * The node each Failure Mode is about: saturation and queue overflow are the Backend busy and
- * losing work, a boundary burst and a limit too loose are the Limiter letting too much through,
- * a limit too tight is it turning too much away, and a retry storm is the Clients sending more.
+ * The node each Failure Mode is about: saturation, queue overflow and goodput collapse are the
+ * Backend busy and losing work; a boundary burst and a limit too loose are the Limiter letting
+ * too much through, and a limit too tight is it turning too much away; a retry storm is the
+ * Clients sending more.
  */
 const NODE_OF: Readonly<Record<FailureMode, PipelineNode>> = {
   saturation: 'backend',
@@ -19,6 +20,7 @@ const NODE_OF: Readonly<Record<FailureMode, PipelineNode>> = {
   'retry-storm': 'client',
   'limit-too-loose': 'limiter',
   'limit-too-tight': 'limiter',
+  'goodput-collapse': 'backend',
 }
 
 const WORD: Readonly<Record<Severity, string>> = { warn: 'STRUGGLING', broken: 'FAILING' }

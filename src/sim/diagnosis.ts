@@ -22,6 +22,7 @@ export type FailureMode =
   | 'retry-storm'
   | 'limit-too-loose'
   | 'limit-too-tight'
+  | 'goodput-collapse'
 
 /** A Cause is a design mistake; a Symptom is what it does to the system. */
 export type FindingKind = 'cause' | 'symptom'
@@ -39,15 +40,20 @@ export const FAILURE_MODES: Readonly<
   'retry-storm': { label: 'Retry storm', kind: 'cause' },
   'limit-too-loose': { label: 'Limit too loose', kind: 'cause' },
   'limit-too-tight': { label: 'Limit too tight', kind: 'cause' },
+  'goodput-collapse': { label: 'Goodput collapse', kind: 'symptom' },
 }
 
 /**
  * The order Symptoms are listed in, and with no Cause, which one is the Root Cause: the first
  * here (D6). Saturation comes first because a Backend that is busy all the time is why its
- * queue fills; goodput collapse joins at the end with RS-28. A Symptom left out of this list
+ * queue fills, and a full queue is what callers give up waiting in, so goodput collapse is last. A Symptom left out of this list
  * is still listed, after these; a test checks every Symptom is here.
  */
-export const SYMPTOM_ORDER: readonly FailureMode[] = ['saturation', 'queue-overflow']
+export const SYMPTOM_ORDER: readonly FailureMode[] = [
+  'saturation',
+  'queue-overflow',
+  'goodput-collapse',
+]
 
 /** How bad a Finding is: `warn` is amber, `broken` is red. */
 export type Severity = 'warn' | 'broken'
@@ -294,6 +300,33 @@ export const LIMIT_TOO_TIGHT_REJECTED_MARGIN = 0.05
  * it straddles 40% (34% to 41%).
  */
 export const LIMIT_TOO_TIGHT_IDLE_BUSY = 0.4
+
+/**
+ * Goodput over its own running peak, over the 5 s window, under which goodput collapse becomes
+ * `warn`: half of what this Variant has shown it can do. A saturated Backend that still serves
+ * never drops below 0.75x (the saturation fixture at 100/s, 68 to 89/s against a peak of 85 to
+ * 91/s, seeds 1 to 8); the collapse fixture reaches 0.23x within 5 s of Demand rising past the
+ * Backend and 0.00x from then on (.scratch/more-rules/spec.md "Measured").
+ */
+export const GOODPUT_COLLAPSE_WARN_RATIO = 0.5
+
+/** The ratio for `broken`: under a quarter of the peak. */
+export const GOODPUT_COLLAPSE_BROKEN_RATIO = 0.25
+
+/**
+ * Goodput collapse leaves a severity only once the ratio rises this far above the threshold that
+ * entered it (broken over 0.35, warn over 0.6), so a ratio near a threshold does not flicker.
+ */
+export const GOODPUT_COLLAPSE_RATIO_MARGIN = 0.1
+
+/**
+ * The Backend's mean busy share over the window at or above which a fall in Goodput counts as a
+ * collapse: the Backend is still working, so the work is being lost, not missing. Demand falling,
+ * or the quiet seconds of bursty traffic, drop Goodput with the Backend idle: the core Scenarios
+ * swing to 0.21x their peak between bursts but are never over 28% busy. The collapse fixture is
+ * 100% busy throughout.
+ */
+export const GOODPUT_COLLAPSE_BUSY = 0.8
 
 /**
  * The first backoff, in ms, a fix gives a Retry Policy that had none: the same as the Retry
@@ -898,6 +931,64 @@ export function limitTooTightRule(limiter: LimiterSpec): Rule {
   }
 }
 
+/**
+ * The goodput collapse rule: Goodput far under the most this Variant has managed, while its
+ * Backend stays busy, so the Backend is working on Attempts whose callers have given up (Wasted
+ * Work). The peak is the best 5 s window since diagnosis started.
+ */
+export function goodputCollapseRule({ slots }: BackendSpec): Rule {
+  let peak = 0
+  let severity: Severity | null = null
+  const fixes: readonly Fix[] = [
+    { text: 'Try a shorter queue, so nothing waits longer than its caller will' },
+    { text: 'Try a lower limit, so the Limiter turns away what the Backend cannot finish in time' },
+    {
+      text: 'Try cancelling work whose caller has given up (not modelled here: the Backend always finishes what it starts)',
+    },
+  ]
+
+  /** The severity after a window at `ratio` of the peak, given the one before. */
+  function nextSeverity(ratio: number): Severity | null {
+    const margin = GOODPUT_COLLAPSE_RATIO_MARGIN
+    const broken = GOODPUT_COLLAPSE_BROKEN_RATIO
+    const warn = GOODPUT_COLLAPSE_WARN_RATIO
+    if (ratio < broken || (severity === 'broken' && ratio < broken + margin)) return 'broken'
+    if (ratio < warn || (severity !== null && ratio < warn + margin)) return 'warn'
+    return null
+  }
+
+  return {
+    id: 'goodput-collapse',
+    judge(window) {
+      const sum = (pick: (s: Snapshot) => number) => window.reduce((t, s) => t + pick(s), 0)
+      const goodput = sum((s) => s.goodput) / window.length
+      peak = Math.max(peak, goodput)
+      const busy = sum((s) => s.backendUtil) / window.length
+      // With no Goodput yet there is nothing to have collapsed from.
+      severity = peak > 0 && busy >= GOODPUT_COLLAPSE_BUSY ? nextSeverity(goodput / peak) : null
+      if (severity === null) return null
+      // Wasted Work as a share of busy slot time, both in slot ms; busy is 80% or more here.
+      const busySlotMs = sum((s) => s.backendUtil) * slots * SNAPSHOT_MS
+      const wastedShare = Math.min(1, sum((s) => s.wastedWorkMs) / busySlotMs)
+      const perSecond = (n: number) => `${n.toFixed(1)}/s`
+      return {
+        severity,
+        evidence: [
+          { metric: 'Goodput', value: perSecond(goodput) },
+          { metric: 'Its peak', value: perSecond(peak) },
+          { metric: 'Busy', value: percent(busy) },
+          { metric: 'Wasted Work', value: percent(wastedShare) },
+        ],
+        why:
+          `Goodput fell to ${perSecond(goodput)} from a peak of ${perSecond(peak)} while the ` +
+          `Backend stayed ${percent(busy)} busy: ${percent(wastedShare)} of its time went on ` +
+          'Attempts whose callers had already given up.',
+        fixes,
+      }
+    },
+  }
+}
+
 /** The rules every Variant is diagnosed with: boundary burst only behind a fixed window. */
 export function defaultRules({ backend, limiter, retry }: DiagnoserOptions): Rule[] {
   return [
@@ -907,6 +998,7 @@ export function defaultRules({ backend, limiter, retry }: DiagnoserOptions): Rul
     limitTooTightRule(limiter),
     saturationRule(backend, limiter),
     queueOverflowRule(backend, limiter),
+    goodputCollapseRule(backend),
   ]
 }
 
