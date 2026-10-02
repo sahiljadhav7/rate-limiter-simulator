@@ -576,9 +576,13 @@ describe('Findings', () => {
     tickTo(runner, 20_000, [16, 33, 100])
     const { variants } = runner.view()
     variants.forEach((variant, i) => {
-      const limiter = scenario.variants[i]?.limiter
-      if (limiter === undefined) throw new Error(`No Variant ${i}`)
-      const direct = createDiagnoser({ backend: scenario.backend, limiter })
+      const config = scenario.variants[i]
+      if (config === undefined) throw new Error(`No Variant ${i}`)
+      const direct = createDiagnoser({
+        backend: scenario.backend,
+        limiter: config.limiter,
+        retry: config.retry,
+      })
       for (const snapshot of variant.snapshots) direct.add(snapshot, variant.allowedSubBuckets)
       expect(variant.findings).toEqual(direct.findings())
       expect(variant.pastFindings).toEqual(direct.history())

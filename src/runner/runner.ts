@@ -186,7 +186,7 @@ function startRun(scenario: Scenario): Run {
         streams: createStreams(scenario.seed),
         subBucketMs: subBucketMsFor(config.limiter),
       }),
-      diagnoser: createDiagnoser({ backend, limiter: config.limiter }),
+      diagnoser: createDiagnoser({ backend, limiter: config.limiter, retry: config.retry }),
       diagnosed: 0,
     }
   })

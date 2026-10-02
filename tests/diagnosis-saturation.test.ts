@@ -50,7 +50,11 @@ const snapshot = (t: number, backendUtil: number, p99: number | null): Snapshot 
 /** Severity after each of `seconds`, each [busy, p99 in ms], fed to the saturation rule alone. */
 function severities(seconds: readonly (readonly [number, number | null])[]) {
   const diagnoser = createDiagnoser(
-    { backend, limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 } },
+    {
+      backend,
+      limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 },
+      retry: { timeoutMs: 500, maxAttempts: 1, retry: 'none' },
+    },
     [saturationRule(backend)],
   )
   return seconds.map(([busy, p99], i) => {
@@ -102,7 +106,11 @@ describe('the saturation rule', () => {
     ])
     expect([4, 9, 14].map((i) => result[i])).toEqual(['broken', 'broken', 'healthy'])
     const diagnoser = createDiagnoser(
-      { backend, limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 } },
+      {
+        backend,
+        limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 },
+        retry: { timeoutMs: 500, maxAttempts: 1, retry: 'none' },
+      },
       [saturationRule(backend)],
     )
     for (let i = 0; i < 5; i++) diagnoser.add(snapshot((6 + i) * 1000, 0.97, 800), allowed)
@@ -116,7 +124,11 @@ describe('the saturation rule', () => {
 
   it('names the evidence and says why from the numbers', () => {
     const diagnoser = createDiagnoser(
-      { backend, limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 } },
+      {
+        backend,
+        limiter: { algo: 'token-bucket', keyBy: 'global', capacity: 1, refillPerSec: 1 },
+        retry: { timeoutMs: 500, maxAttempts: 1, retry: 'none' },
+      },
       [saturationRule(backend)],
     )
     for (let i = 0; i < 5; i++) diagnoser.add(snapshot((6 + i) * 1000, 0.98, 806), allowed)

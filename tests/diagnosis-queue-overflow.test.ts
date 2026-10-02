@@ -7,6 +7,7 @@ import { snapshotAt } from './snapshots.ts'
 const options: DiagnoserOptions = {
   backend: { slots: 4, queueLimit: 20, meanMs: 100, cv: 1 },
   limiter: { algo: 'sliding-counter', keyBy: 'global', limit: 10, windowMs: 1000 },
+  retry: { timeoutMs: 500, maxAttempts: 1, retry: 'none' },
 }
 const allowed: AllowedSubBuckets = { bucketMs: 100, counts: [] }
 

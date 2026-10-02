@@ -8,6 +8,7 @@ describe('FIRST_JUDGEMENT_MS', () => {
     const diagnoser = createDiagnoser({
       backend: { slots: 4, queueLimit: 20, meanMs: 100, cv: 1 },
       limiter: { algo: 'sliding-counter', keyBy: 'global', limit: 10, windowMs: 1000 },
+      retry: { timeoutMs: 500, maxAttempts: 1, retry: 'none' },
     })
     let firstAt: number | null = null
     for (let t = 1000; t <= 20_000 && firstAt === null; t += 1000) {

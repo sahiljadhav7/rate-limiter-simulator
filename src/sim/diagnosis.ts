@@ -9,7 +9,7 @@ import type { BackendSpec } from './backend.ts'
 import { baselineP99Ms } from './baseline.ts'
 import type { AllowedSubBuckets } from './engine.ts'
 import { bucketAt } from './buckets.ts'
-import type { FixedWindowSpec, LimiterSpec } from './limiter.ts'
+import { allowedPerSecond, type FixedWindowSpec, type LimiterSpec } from './limiter.ts'
 import type { RetryPolicy } from './retry-policy.ts'
 import { QUICK_RETRY_MS, SNAPSHOT_MS, WARM_UP_MS, type Snapshot } from './metrics.ts'
 import { rollingWindowCounts } from './window-counts.ts'
@@ -237,6 +237,25 @@ export const RETRY_STORM_QUICK_SHARE = 0.6
 export const RETRY_STORM_CLEAR_WINDOWS = 10
 
 /**
+ * The first backoff, in ms, a fix gives a Retry Policy that had none: the same as the Retry
+ * Policy dropdown's default, so an applied fix matches what choosing that mode there does.
+ */
+export const FIX_BASE_DELAY_MS = 100
+
+/**
+ * A lower limit for a saturated Backend, as a share of what it can serve (slots x 1000 / mean
+ * ms). On the saturation fixture at 100/s (ceiling 80), a token bucket at 0.75 of it, 60/s,
+ * clears saturation in every second, seeds 1 to 8; at 0.875 (70/s) it still warns for up to 8 s
+ * of 111 (.scratch/apply-fix/patch-probe.ts).
+ */
+export const FIX_LOWER_LIMIT_SHARE = 0.75
+
+/** A token bucket's capacity for a fix: half the Backend's queue, so a full bucket fits in it. */
+function smallCapacity({ queueLimit }: BackendSpec): number {
+  return Math.max(1, Math.floor(queueLimit / 2))
+}
+
+/**
  * What a rule detects in one full window: the parts of a Finding that come from its numbers.
  * (Not a "verdict": CONTEXT.md keeps that word away from a Limiter Decision.)
  */
@@ -268,6 +287,8 @@ export interface DiagnoserOptions {
   readonly backend: BackendSpec
   /** The Variant's Limiter: whether it is a fixed window, with its limit and window. */
   readonly limiter: LimiterSpec
+  /** The Variant's Retry Policy, which the retry storm's fixes change. */
+  readonly retry: RetryPolicy
 }
 
 /** Reads a Variant's Snapshots one at a time and keeps its Findings. */
@@ -291,8 +312,39 @@ function percent(share: number): string {
 }
 
 /** The queue overflow rule: the share of Attempts sent to the Backend that it lost. */
-export function queueOverflowRule({ queueLimit }: BackendSpec): Rule {
+export function queueOverflowRule(backend: BackendSpec, limiter: LimiterSpec): Rule {
+  const { queueLimit } = backend
   let severity: Severity | null = null
+  const fixes: readonly Fix[] = [
+    // Ranked by what each did for the sliding window counter in Backend overload at 30/s,
+    // seeds 1 to 8 (.scratch/apply-fix/patch-probe.ts), against broken 96 to 111 s of 111 and
+    // Goodput 11.3 to 11.7/s as is: a token bucket at the same rate holding half the queue (10)
+    // never overflows, Goodput 15.6 to 15.7/s, and at 40/s too; twice the slots, broken never and
+    // warn at most 5 s, 14.0/s (at 40/s broken 5 to 21 s); twice the queue, broken 5 to 35 s and
+    // 13.5 to 13.8/s, with the p99 up from about 340 ms to 450 to 484 ms. A lower limit stops the
+    // loss but turns so much away that Goodput falls (7.9/s at 40, .scratch/review/fixes.ts),
+    // so it is not suggested.
+    {
+      text: 'Try a Limiter that lets Attempts through at a steady pace instead of a whole window at once, such as a token bucket with a small capacity',
+      patch: {
+        name: 'token bucket',
+        limiter: {
+          algo: 'token-bucket',
+          keyBy: limiter.keyBy,
+          capacity: smallCapacity(backend),
+          refillPerSec: allowedPerSecond(limiter),
+        },
+      },
+    },
+    {
+      text: 'Try more Backend slots',
+      patch: { name: 'more slots', backend: { slots: backend.slots * 2 } },
+    },
+    {
+      text: 'Try a bigger queue (Attempts wait longer)',
+      patch: { name: 'bigger queue', backend: { queueLimit: Math.max(1, queueLimit * 2) } },
+    },
+  ]
 
   /** The severity after a window that lost `share`, given the one before. */
   function nextSeverity(share: number | null): Severity | null {
@@ -330,18 +382,7 @@ export function queueOverflowRule({ queueLimit }: BackendSpec): Rule {
         why:
           `The queue of ${queueLimit} filled, so ${shed} Attempts were shed and ${timedOut} ` +
           `timed out: ${percent(share)} of what the Limiter let through.`,
-        fixes: [
-          // Ranked by what each did for the sliding window counter in Backend overload at 30/s,
-          // seeds 1 to 8 (.scratch/review/fixes.ts): token bucket of 10, 0% lost and Goodput 15.7/s;
-          // 8 slots, 0.1% and 14.0/s; a queue of 60, up to 3.5% and 13.7/s; as is, 11.5/s. A lower
-          // limit stops the loss but turns so much away that Goodput falls (7.9/s at 40), so it
-          // is not suggested.
-          {
-            text: 'Try a Limiter that lets Attempts through at a steady pace instead of a whole window at once, such as a token bucket with a small capacity',
-          },
-          { text: 'Try more Backend slots' },
-          { text: 'Try a bigger queue (Attempts wait longer)' },
-        ],
+        fixes,
       }
     },
   }
@@ -353,6 +394,35 @@ export function queueOverflowRule({ queueLimit }: BackendSpec): Rule {
  */
 export function saturationRule(backend: BackendSpec): Rule {
   const baseline = baselineP99Ms(backend)
+  const ceiling = backend.slots * (1000 / backend.meanMs)
+  const fixes: readonly Fix[] = [
+    // Ranked by what each did on the saturation fixture at 100/s, 1.25x its ceiling, seeds 1 to
+    // 8 (.scratch/apply-fix/patch-probe.ts), against broken 106 to 111 s of 111 at 78 to 81/s
+    // as is: twice the slots, never saturated and Goodput 98.6 to 101.2/s; half the service
+    // time, the same Goodput with the p99 down to 120 to 129 ms; a token bucket at 0.75 of the
+    // ceiling, never saturated but Goodput held at 60/s. The simulator has no cache, so
+    // "cheaper" is measured as a shorter service time.
+    {
+      text: 'Try more Backend slots',
+      patch: { name: 'more slots', backend: { slots: backend.slots * 2 } },
+    },
+    {
+      text: 'Try making each Attempt cheaper for the Backend, such as with a cache',
+      patch: { name: 'cheaper Attempts', backend: { meanMs: backend.meanMs / 2 } },
+    },
+    {
+      text: 'Try a limit below what the Backend can serve (it turns more away, but what gets through is quick)',
+      patch: {
+        name: 'lower limit',
+        limiter: {
+          algo: 'token-bucket',
+          keyBy: 'global',
+          capacity: smallCapacity(backend),
+          refillPerSec: ceiling * FIX_LOWER_LIMIT_SHARE,
+        },
+      },
+    },
+  ]
   let severity: Severity | null = null
 
   const broken = { busy: SATURATION_BROKEN_BUSY, ratio: SATURATION_BROKEN_RATIO }
@@ -402,19 +472,7 @@ export function saturationRule(backend: BackendSpec): Rule {
             : `The Backend was busy ${percent(busy)} of the time, so Attempts waited for a ` +
               `slot: the slowest 1 in 100 took ${ms(p99)}, ${ratio.toFixed(1)}× the ` +
               `${ms(baseline)} its work alone takes.`,
-        fixes: [
-          // Ranked by what each did on the saturation fixture at 100/s, 1.25x its ceiling, seeds
-          // 1 to 8 (.scratch/diagnosis/saturation-fixes.ts): 8 slots, never saturated and Goodput
-          // 99 to 101/s; half the service time, the same Goodput with p99 down to 122 to 139 ms;
-          // a token bucket at 70/s, saturation gone (warn at most 7% of seconds) but Goodput held
-          // at 70/s; as is, broken 95% to 100% of seconds at 78 to 81/s. The simulator has no
-          // cache, so "cheaper" is measured as a shorter service time.
-          { text: 'Try more Backend slots' },
-          { text: 'Try making each Attempt cheaper for the Backend, such as with a cache' },
-          {
-            text: 'Try a limit below what the Backend can serve (it turns more away, but what gets through is quick)',
-          },
-        ],
+        fixes,
       }
     },
   }
@@ -455,7 +513,35 @@ function createHold<T>(clearWindows: number) {
  * must have crossed an edge; one Client bursting while the others are quiet can stay under it,
  * so the rule can miss a burst but never reports one that did not happen.
  */
-export function boundaryBurstRule({ keyBy, limit, windowMs }: FixedWindowSpec): Rule {
+export function boundaryBurstRule(limiter: FixedWindowSpec): Rule {
+  const { keyBy, limit, windowMs } = limiter
+  const fixes: readonly Fix[] = [
+    // Measured on Edge burst at 4/s against 10 per 1000 ms, seeds 1 to 8: a sliding window
+    // counter peaks at 1.2x to 1.4x, a token bucket of capacity 5 at 1.1x to 1.4x, but one of
+    // capacity 10 still at 1.6x to 1.9x, so the capacity has to be small
+    // (.scratch/diagnosis/boundary-fixes.ts). Applied, both clear boundary burst in every second
+    // (.scratch/apply-fix/patch-probe.ts); Goodput moves from 4.8 to 5.4/s to 4.0 to 4.8/s,
+    // since a limit really kept lets less of each burst through.
+    {
+      text: 'Try a sliding window counter, which still counts the window before the edge',
+      patch: {
+        name: 'sliding window counter',
+        limiter: { algo: 'sliding-counter', keyBy, limit, windowMs },
+      },
+    },
+    {
+      text: 'Try a token bucket with a small capacity, such as half the limit, so a burst cannot spend a whole window at once',
+      patch: {
+        name: 'token bucket',
+        limiter: {
+          algo: 'token-bucket',
+          keyBy,
+          capacity: Math.max(1, Math.ceil(limit / 2)),
+          refillPerSec: allowedPerSecond(limiter),
+        },
+      },
+    },
+  ]
   /** The newest window-length over each threshold: its count, its end, the limit then. */
   type Peak = {
     readonly count: number
@@ -514,17 +600,7 @@ export function boundaryBurstRule({ keyBy, limit, windowMs }: FixedWindowSpec): 
           'The fixed window starts counting from zero at each edge, so Attempts just before an ' +
           `edge and just after it both fit: ${shown.count} got through in one window-length ` +
           `around ${when}, ${over} the limit of ${limitText}.`,
-        fixes: [
-          // Measured on Edge burst at 4/s, seeds 1 to 8, against 10 per 1000 ms
-          // (.scratch/diagnosis/boundary-fixes.ts): a sliding window counter peaks at 1.2x to
-          // 1.4x; a token bucket of capacity 5 at 1.1x to 1.4x, but one of capacity 10 still at
-          // 1.6x to 1.9x, so the capacity has to be small. Goodput moves little (4.0 to 5.5/s),
-          // since the background traffic is under every limit.
-          { text: 'Try a sliding window counter, which still counts the window before the edge' },
-          {
-            text: 'Try a token bucket with a small capacity, such as half the limit, so a burst cannot spend a whole window at once',
-          },
-        ],
+        fixes,
       }
     },
   }
@@ -535,7 +611,28 @@ export function boundaryBurstRule({ keyBy, limit, windowMs }: FixedWindowSpec): 
  * Attempts come straight back, measured by how many retries started within QUICK_RETRY_MS of
  * the failure that caused them.
  */
-export function retryStormRule(): Rule {
+export function retryStormRule(retry: RetryPolicy): Rule {
+  const baseDelayMs = 'baseDelayMs' in retry ? retry.baseDelayMs : FIX_BASE_DELAY_MS
+  const fixes: readonly Fix[] = [
+    // Ranked by Goodput for the sliding window counter in Backend overload at 30/s with "Retry
+    // at once", seeds 1 to 8 (.scratch/apply-fix/patch-probe.ts), against broken 110 to 111 s
+    // of 111 and 10.0 to 10.6/s as is: back off with jitter, never a storm and 12.8 to 13.4/s;
+    // wait for Retry-After, never a storm and 10.9 to 11.5/s; one Attempt fewer, warn throughout
+    // instead of broken and 10.5 to 10.9/s. The same order holds for the token bucket there and
+    // the fixed window in Edge burst.
+    {
+      text: 'Try backing off with jitter, so each new Attempt waits a random, growing time',
+      patch: { name: 'back off with jitter', retry: { retry: 'backoff-jitter', baseDelayMs } },
+    },
+    {
+      text: 'Try waiting for Retry-After, so new Attempts come when the Limiter says there is room',
+      patch: { name: 'wait for Retry-After', retry: { retry: 'retry-after', baseDelayMs } },
+    },
+    {
+      text: 'Try fewer Attempts per Request, so each failure adds less traffic',
+      patch: { name: 'fewer Attempts', retry: { maxAttempts: Math.max(1, retry.maxAttempts - 1) } },
+    },
+  ]
   type Reading = {
     readonly demand: number
     readonly offered: number
@@ -592,29 +689,19 @@ export function retryStormRule(): Rule {
           `Offered Load reached ${amp} Demand because ${quick} of retry Attempts came within ` +
           `${QUICK_RETRY_MS} ms of the failure that caused them, too soon for anything to have ` +
           'changed.',
-        fixes: [
-          // Ranked by Goodput for the sliding window counter in Backend overload at 30/s with
-          // "Retry at once" (9.9 to 10.7/s), seeds 1 to 8 (.scratch/diagnosis/retry-fixes.ts):
-          // back off with jitter 12.7 to 13.6/s; wait for Retry-After 10.9 to 11.6/s; 2 Attempts
-          // instead of 3, 10.5 to 11.0/s, with amplification down from 2.3x to 1.65x.
-          { text: 'Try backing off with jitter, so each new Attempt waits a random, growing time' },
-          {
-            text: 'Try waiting for Retry-After, so new Attempts come when the Limiter says there is room',
-          },
-          { text: 'Try fewer Attempts per Request, so each failure adds less traffic' },
-        ],
+        fixes,
       }
     },
   }
 }
 
 /** The rules every Variant is diagnosed with: boundary burst only behind a fixed window. */
-export function defaultRules({ backend, limiter }: DiagnoserOptions): Rule[] {
+export function defaultRules({ backend, limiter, retry }: DiagnoserOptions): Rule[] {
   return [
     ...(limiter.algo === 'fixed-window' ? [boundaryBurstRule(limiter)] : []),
-    retryStormRule(),
+    retryStormRule(retry),
     saturationRule(backend),
-    queueOverflowRule(backend),
+    queueOverflowRule(backend, limiter),
   ]
 }
 

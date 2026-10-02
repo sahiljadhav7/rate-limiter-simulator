@@ -10,10 +10,13 @@ import {
 import type { AllowedSubBuckets } from '../src/sim/engine.ts'
 import type { BackendSpec } from '../src/sim/backend.ts'
 import type { LimiterSpec } from '../src/sim/limiter.ts'
+import type { RetryPolicy } from '../src/sim/retry-policy.ts'
 import { snapshotAt } from './snapshots.ts'
 
 const backend: BackendSpec = { slots: 4, queueLimit: 20, meanMs: 100, cv: 1 }
 const limiter: LimiterSpec = { algo: 'fixed-window', keyBy: 'global', limit: 10, windowMs: 1000 }
+/** No retries: ranking does not depend on them. */
+const retry: RetryPolicy = { timeoutMs: 500, maxAttempts: 1, retry: 'none' }
 const allowed: AllowedSubBuckets = { bucketMs: 100, counts: [] }
 
 const snapshot = snapshotAt
@@ -32,7 +35,7 @@ function scripted(id: FailureMode, ...spans: (readonly [number, number])[]): Rul
 
 /** Feeds Snapshots ending at 1 s to `untilS` s through a diagnoser with `rules`. */
 function run(rules: readonly Rule[], untilS: number) {
-  const diagnoser = createDiagnoser({ backend, limiter }, rules)
+  const diagnoser = createDiagnoser({ backend, limiter, retry }, rules)
   for (let s = 1; s <= untilS; s++) diagnoser.add(snapshot(s * 1000), allowed)
   return diagnoser
 }
@@ -125,7 +128,7 @@ describe('full windows only', () => {
   })
 
   it('finds no queue overflow before 10 s even when every Attempt after the warm-up is lost', () => {
-    const diagnoser = createDiagnoser({ backend, limiter })
+    const diagnoser = createDiagnoser({ backend, limiter, retry })
     const findingsAt: number[] = []
     for (let s = 1; s <= 12; s++) {
       diagnoser.add(snapshot(s * 1000, { allowed: 100, shed: 100 }), allowed)
@@ -161,7 +164,7 @@ describe('past Findings', () => {
   })
 
   it('is a new list when a Finding clears, and the same one otherwise', () => {
-    const diagnoser = createDiagnoser({ backend, limiter }, [
+    const diagnoser = createDiagnoser({ backend, limiter, retry }, [
       scripted('queue-overflow', [11_000, 13_000]),
     ])
     for (let s = 1; s <= 12; s++) diagnoser.add(snapshot(s * 1000), allowed)
