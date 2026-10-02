@@ -188,8 +188,8 @@ describe('scripted arrivals', () => {
     expect(source.reader().read(0)).toHaveLength(3)
   })
 
-  // Scripted arrivals take no draw from the traffic stream, so adding an Edge Burst to a
-  // Scenario leaves every generated arrival exactly where it was.
+  // Scripted arrivals take no draw from the traffic stream, so adding a burst at a window edge
+  // to a Scenario leaves every generated arrival exactly where it was.
   it('leaves every generated arrival time and Client unchanged', () => {
     const poisson: TrafficSpec = { shape: 'poisson', demandRps: 150, clients: ['a', 'b', 'c'] }
     const generated = (scriptedArrivals: { atMs: number; count: number }[]) => {

@@ -10,7 +10,7 @@ import { createTrafficSource, type ControlChange } from '../src/sim/traffic-sour
 /**
  * Three Variants on traffic that keeps every path busy: 200 rps against Limiters allowing 120
  * per second, in front of a Backend with a ceiling of 4 x (1000 / 40) = 100 rps, with a
- * scripted demand step, a burst and an Edge Burst.
+ * scripted demand step, a burst and scripted arrivals just before a window edge.
  */
 const scenario: Scenario = {
   id: 'runner-test',

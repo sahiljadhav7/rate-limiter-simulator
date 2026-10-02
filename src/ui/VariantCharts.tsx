@@ -25,7 +25,7 @@ function pointsOf(snapshots: readonly Snapshot[], pick: (s: Snapshot) => number 
 export const CHART_ROWS = 5
 
 /** The window chart's title; a Limiter without a window keeps it over a short line. */
-const BOUNDARY_TITLE = 'Allowed in the last window'
+const WINDOW_CHART_TITLE = 'Allowed in the last window'
 
 /** What one Variant's charts are drawn from. */
 export interface VariantChartsProps {
@@ -63,7 +63,7 @@ export const VariantCharts = memo(function VariantCharts({
     <>
       {limiterWindowSpec ? (
         <TimeSeriesChart
-          title={BOUNDARY_TITLE}
+          title={WINDOW_CHART_TITLE}
           unit=""
           nowMs={nowMs}
           markers={markers}
@@ -86,7 +86,7 @@ export const VariantCharts = memo(function VariantCharts({
         />
       ) : (
         <div className="chart-none">
-          <span className="chart-title">{BOUNDARY_TITLE}</span>
+          <span className="chart-title">{WINDOW_CHART_TITLE}</span>
           <p>
             {ALGORITHM_NAMES[config.limiter.algo]} has no window: it lets Attempts through as its
             tokens come back, so there is no count per window to show.

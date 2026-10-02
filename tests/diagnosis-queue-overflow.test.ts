@@ -62,7 +62,7 @@ describe('the queue overflow rule', () => {
       'The queue of 20 filled, so 300 Attempts were shed and 0 timed out: 6.0% of what the Limiter let through.',
     )
     expect(finding?.fixes.map((fix) => fix.text)).toEqual([
-      'Try a Limiter that lets Attempts through at a steady pace instead of a whole window at once, such as a token bucket with a small capacity',
+      'Try a Limiter that lets Attempts through at a steady pace instead of a whole window of them after a quiet spell, such as a token bucket with a small capacity',
       'Try more Backend slots',
       'Try a bigger queue (Attempts wait longer)',
     ])

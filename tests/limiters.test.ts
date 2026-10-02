@@ -287,7 +287,7 @@ describe('sliding window counter', () => {
 
 /**
  * Runs scripted arrivals from one Client through one engine with `spec`'s Limiter. Returns the
- * most allowed within any one-second window-length (as the boundary-burst chart plots them,
+ * most allowed within any one-second window-length (as the window chart plots them,
  * from 100 ms sub-buckets), the allowed count of each of the first two one-second windows,
  * and the totals.
  */
@@ -328,7 +328,7 @@ const tenPerSecond = {
 } satisfies Record<string, LimiterSpec>
 
 describe('at a window edge', () => {
-  /** Edge Burst: 30 Requests just before the edge at 1000 ms and 30 just after. */
+  /** A burst across a window edge: 30 Requests just before the edge at 1000 ms and 30 just after. */
   const edgeBurst = (spec: LimiterSpec) =>
     allowedThroughEngine(spec, [
       { atMs: 950, count: 30 },

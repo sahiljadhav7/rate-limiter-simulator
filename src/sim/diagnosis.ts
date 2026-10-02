@@ -473,7 +473,7 @@ export function queueOverflowRule(backend: BackendSpec): Rule {
     // loss but turns so much away that Goodput falls (7.9/s at 40, .scratch/review/fixes.ts),
     // so it is not suggested.
     {
-      text: 'Try a Limiter that lets Attempts through at a steady pace instead of a whole window at once, such as a token bucket with a small capacity',
+      text: 'Try a Limiter that lets Attempts through at a steady pace instead of a whole window of them after a quiet spell, such as a token bucket with a small capacity',
     },
     { text: 'Try more Backend slots' },
     { text: 'Try a bigger queue (Attempts wait longer)' },

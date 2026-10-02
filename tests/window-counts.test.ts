@@ -45,11 +45,11 @@ describe('rollingWindowCounts', () => {
     }
   })
 
-  // The Edge Burst from tests/limiters.test.ts, through the runner: 30 Requests at 950 ms and
+  // The burst across a window edge from tests/limiters.test.ts, through the runner: 30 Requests at 950 ms and
   // 30 at 1050 ms, a limit of 10 per 1000 ms window, no other traffic.
   const edgeBurst = (limiter: LimiterSpec): Scenario => ({
     id: 'edge',
-    title: 'Edge Burst',
+    title: 'Burst across a window edge',
     lesson: '',
     why: '',
     models: '',
@@ -78,7 +78,7 @@ describe('rollingWindowCounts', () => {
     ],
     // 10 tokens at 950 ms, and one back by 1050 ms.
     ['token bucket', { algo: 'token-bucket', keyBy: 'global', capacity: 10, refillPerSec: 10 }, 11],
-  ])('peaks at the Edge Burst count for %s: %s', (_, limiter, peak) => {
+  ])('peaks at the count let through across the edge for %s: %s', (_, limiter, peak) => {
     const runner = createRunner(edgeBurst(limiter))
     for (let i = 0; i < 30; i++) runner.tick(100)
     const subBuckets = runner.view().variants[0]?.allowedSubBuckets

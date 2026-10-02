@@ -82,8 +82,6 @@ const TABLE: readonly Row[] = [
   ['Backend overload', backendOverloadScenario, 30, 'backoff', [overflow, none]],
   ['Backend overload', backendOverloadScenario, 30, 'backoff-jitter', [overflow, none]],
   ['Backend overload', backendOverloadScenario, 30, 'retry-after', [overflow, none]],
-  // Fixed window first: a boundary burst at every Edge Burst, the Root Cause. The sliding
-  // window counter has no window edge reset, and the Backend copes with what it allows.
 ]
 
 describe('Scenario Findings table', () => {
