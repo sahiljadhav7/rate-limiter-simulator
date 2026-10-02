@@ -459,6 +459,7 @@ Every ticket is tagged **[Core]** (days 1 and 2, about 24 hours), **[Day 3]** (a
 - **RS-13 Distributed wrapper [Stretch]** (2h): N nodes, `LocalStore` and `SharedStore` with latency (via `DECISION` events) and skew. *Depends on RS-7, RS-8, RS-11.*
   - *AC:* with the local store, the effective limit measures approximately N x L.
 - **RS-14b Queueing-theory validation tests [Day 3]** (0.5h): low-load mean latency approaches mean service time; utilization = arrival rate x mean service time / slots; Little's law. Fixed seeds and tolerance bands. *Depends on RS-5, RS-6.*
+  - *Note (2026-10-02):* built as `tests/queueing.test.ts`. The engine reports only percentiles, so mean time in system and Little's law are measured on the real traffic source and Backend in `tests/queueing.ts`; utilization and low-load percentiles are checked through engine Snapshots. Also checks Erlang C (M/M/4) and Pollaczek-Khinchine (M/G/1) at 80% busy. Bands and measurements: `.scratch/queueing/spec.md`.
 
 **Day 1 checkpoint:** a script prints comparable stats for the core limiters (one Variant each) on the same traffic, and one scenario draws a raw SVG line chart in the browser.
 
