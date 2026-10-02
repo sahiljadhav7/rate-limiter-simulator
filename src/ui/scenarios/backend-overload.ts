@@ -17,6 +17,14 @@
  * nearly throughout; the token bucket never. Goodput at 20, 30 and 40/s: sliding counter 13.7,
  * 11.6 and 9.9 (more traffic, less work done); token bucket 15.4 to 15.7.
  *
+ * The sliding counter's queue overflow can still clear for a few seconds at 30/s. Diagnosis looks
+ * at the last 5 s, which hold one burst, and a mild burst loses too little to stay broken. Sampled
+ * every second from 15 to 120 s (.scratch/new-scenarios/qo-gaps.ts): seed 1, the default, has no
+ * card at 46 to 50 s and warn at 86 to 90 s; seed 4 warn for 10 s and no card for 5 s; seeds 2,
+ * 3, 5, 6 and 7 broken throughout; seed 8 broken from 16 s, after warn at 11 to 15 s
+ * (.scratch/new-scenarios/qo-seed8.ts, as diagnosis starts at 10 s). The gap is true, so the
+ * second note says so rather than the rule hiding it (the first note has no room left).
+ *
  * Service times vary moderately (cv 0.5), not exponentially (cv 1): at 70 a second the Backend
  * is 87.5% busy, and with exponential service its queue overflows now and then however evenly
  * Attempts arrive. That is a lesson about utilization, not pacing, so it is kept out of this
@@ -50,7 +58,8 @@ export const backendOverloadScenario: Scenario = {
   models:
     'One Limiter counting all Clients together, in front of one Backend with 4 slots and room ' +
     'for 20 to wait. Each Attempt takes about 50 ms there, varying a little. Traffic comes for ' +
-    '1 s, then stops for 4 s.',
+    '1 s, then stops for 4 s. Bursts vary, so after a mild one the red can clear for a few ' +
+    'seconds.',
   leavesOut:
     'Retries unless you turn them on, network latency, and Backends that slow down as they fill.',
   seed: 1,

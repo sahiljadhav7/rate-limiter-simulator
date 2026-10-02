@@ -98,8 +98,11 @@ A Failure Mode that describes a consequence visible at the Backend, such as satu
 _Avoid_: effect
 
 **Finding**:
-One detected occurrence of a Failure Mode in a Variant, with the measured evidence that triggered it.
+One detected occurrence of a Failure Mode in a Variant, with the measured evidence that triggered it. It lasts from when its rule fires until the rule clears; if the same Failure Mode fires again later, that is a new Finding.
 _Avoid_: alert, issue, diagnosis (for a single one)
+
+**Severity**:
+How bad a Finding is, measured against its own Failure Mode's two thresholds: **Warning** once the first is crossed (trouble starting), **Broken** once the second is (the Failure Mode in full).
 
 **Root Cause**:
 The single Finding a diagnosis names as the origin; every other Finding is **Contributing**.
