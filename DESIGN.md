@@ -201,7 +201,7 @@ Labels inside the card use `--text-dim`: `--text-faint` on `--warn-soft` is 4.36
 ### Mobile (below 640px)
 
 Following Breakscale's mobile layout:
-- The top bar collapses to the name, undo/redo and Share. Demand and the headline stat move into a strip beneath it, with the slider full width underneath.
+- The top bar is one row with the name and Scenario picker beside Share. Under it, the controls island: Demand with the headline stat to its right (the open tab's Attempt p99, named by the Variant's short name; on the Compare tab every Variant's p99, each named; a dash with no p99), the slider full width underneath, then play, step, reset and speed on one row. Burst and Seed sit behind a **More** disclosure (a native `<details>` whose summary looks like a button), as they are used least. There is no undo or redo: Reset gives a way back.
 - Only one Variant is visible at a time; the first is open on load. A bottom tab bar (height 56px, `--surface` with a top border) switches between Variants, with a final **Compare** tab that shows every Variant's stat row in a stack. Each Variant's tab has its algorithm's icon in the limiter kind's stroke and a short name (Fixed window, Sliding window, Token bucket; two Variants sharing one add their key scope); the open tab has `--text` and a 3px `--accent` bar on its top edge. A tab whose Variant has an active Finding carries a dot in `--danger-mark` or `--warn-mark`, and its accessible name adds "broken" or "warning". The open tab is not part of the link.
 - Charts keep their full width. Notes wrap under the charts.
 - Keep a 16px gutter, and never scroll horizontally.

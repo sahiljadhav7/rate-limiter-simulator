@@ -7,6 +7,7 @@ import type { VariantConfig } from '../../runner/scenario.ts'
 import type { Finding, Severity } from '../../sim/index.ts'
 import { SEVERITY_NAMES } from '../panel/diagnosis-card.ts'
 import { KEY_SCOPE_NAMES, SHORT_ALGORITHM_NAMES } from '../panel/limiter-names.ts'
+import { formatNumber } from '../panel/stats.ts'
 
 /** True if `names` has `name` more than once. */
 const repeated = (names: readonly string[], name: string) =>
@@ -65,4 +66,24 @@ export function rootCause(
   return cause
     ? { label: cause.label, severity: cause.severity, word: SEVERITY_NAMES[cause.severity] }
     : null
+}
+
+/** One number of the phone's headline: a Variant's short name and its p99 as shown. */
+export interface HeadlineStat {
+  readonly name: string
+  readonly value: string
+}
+
+/**
+ * The phone top bar's headline beside Demand (spec decision 7): the open Variant's Attempt p99
+ * over the last 5 seconds, named, or every Variant's on the Compare tab (`open` equal to the
+ * Variant count). A dash where there is no p99, as in the stat row.
+ */
+export function headlineStats(
+  open: number,
+  names: readonly string[],
+  p99s: readonly (number | null)[],
+): HeadlineStat[] {
+  const all = names.map((name, i) => ({ name, value: formatNumber(p99s[i] ?? null) }))
+  return open < names.length ? all.slice(open, open + 1) : all
 }

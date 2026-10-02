@@ -97,6 +97,60 @@
   gap: var(--sp-3);
 }
 
+/*
+ * The phone's headline beside Demand (DESIGN.md "Mobile"): the open Variant's Attempt p99, or
+ * every Variant's on the Compare tab, pushed to the right of the readout.
+ */
+.headline {
+  display: flex;
+  gap: var(--sp-4);
+  margin: 0 0 0 auto;
+}
+
+.headline-stat dd {
+  margin: 0;
+}
+
+.headline-value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-num);
+  letter-spacing: var(--tr-lg);
+  line-height: var(--lh-num);
+}
+
+/* More (phone only): Burst and Seed behind a native disclosure, its summary drawn as a button. */
+.more {
+  flex-basis: 100%;
+}
+
+.more > summary {
+  width: fit-content;
+  list-style: none;
+}
+
+.more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.more > summary::after {
+  content: '▾';
+  color: var(--text-dim);
+}
+
+.more[open] > summary::after {
+  content: '▴';
+}
+
+.more-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-5);
+  margin-top: var(--sp-3);
+}
+
 /* On a phone the track wraps under the readout and takes the full width, so it never overflows. */
 @media (max-width: 639px) {
   .demand {

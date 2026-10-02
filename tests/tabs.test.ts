@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { VariantConfig } from '../src/runner/scenario.ts'
 import type { Finding, LimiterSpec } from '../src/sim/index.ts'
-import { movedTab, rootCause, shortNames, tabBadge } from '../src/ui/tabs/tabs.ts'
+import { DASH } from '../src/ui/panel/stats.ts'
+import { headlineStats, movedTab, rootCause, shortNames, tabBadge } from '../src/ui/tabs/tabs.ts'
 
 const retry = { timeoutMs: 1000, retry: 'none', maxAttempts: 1 } as const
 const variant = (label: string, limiter: LimiterSpec): VariantConfig => ({ label, limiter, retry })
@@ -117,5 +118,24 @@ describe('rootCause', () => {
       severity: 'broken',
       word: 'Broken',
     })
+  })
+})
+
+describe('headlineStats', () => {
+  const names = ['Sliding window', 'Token bucket']
+
+  it("is the open Variant's Attempt p99, named", () => {
+    expect(headlineStats(1, names, [339, 156])).toEqual([{ name: 'Token bucket', value: '156' }])
+  })
+
+  it("is every Variant's p99 on the Compare tab", () => {
+    expect(headlineStats(2, names, [339, 156])).toEqual([
+      { name: 'Sliding window', value: '339' },
+      { name: 'Token bucket', value: '156' },
+    ])
+  })
+
+  it('is a dash, never 0, with no p99 to show', () => {
+    expect(headlineStats(0, names, [null, 156])).toEqual([{ name: 'Sliding window', value: DASH }])
   })
 })

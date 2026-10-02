@@ -1,7 +1,8 @@
 import { memo, useId, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { SPEEDS, type Speed } from '../../runner/runner.ts'
 import { MAX_SEED } from '../../sim/index.ts'
-import { formatNumber } from '../panel/stats.ts'
+import { DASH, formatNumber } from '../panel/stats.ts'
+import type { HeadlineStat } from '../tabs/tabs.ts'
 import type { RunnerControls } from '../use-runner.ts'
 import { DEMAND_TICKS, demandFromPosition, positionFromDemand } from './demand.ts'
 import { PauseIcon, PlayIcon, ResetIcon, StepIcon } from './icons.tsx'
@@ -21,8 +22,10 @@ function DemandSlider(props: {
   readonly demandRps: number
   readonly onChange: (demandRps: number) => void
   readonly onRelease: (demandRps: number) => void
+  /** On a phone: the headline stat beside the Demand, between it and the full-width track. */
+  readonly headline?: readonly HeadlineStat[] | undefined
 }) {
-  const { demandRps, onChange, onRelease } = props
+  const { demandRps, onChange, onRelease, headline } = props
   const id = useId()
   /** The position being dragged, or null: the run's Demand lags a frame behind the thumb. */
   const [draft, setDraft] = useState<number | null>(null)
@@ -40,6 +43,21 @@ function DemandSlider(props: {
         <span className="demand-value">{formatNumber(shown)}</span>
         <span className="unit">requests / sec</span>
       </label>
+      {headline ? (
+        <dl className="headline" aria-label="Attempt p99, last 5 seconds">
+          {headline.map(({ name, value }) => (
+            <div key={name} className="headline-stat">
+              <dt className="label">
+                {name} <abbr title="99th percentile">p99</abbr>
+              </dt>
+              <dd className="headline-value">
+                {value}
+                {value === DASH ? null : <span className="unit">ms</span>}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       <div className="demand-track">
         <input
           id={id}
@@ -126,6 +144,13 @@ export interface TopBarControlsProps {
   readonly onSeed: (seed: number) => void
   /** The Demand the slider was released at, in Requests per second. */
   readonly onDemandRelease: (demandRps: number) => void
+  /**
+   * Below 640px (DESIGN.md "Mobile"): the headline stat sits beside Demand, and Burst and Seed
+   * fold into a More disclosure. Wider screens show them inline, as before.
+   */
+  readonly phone: boolean
+  /** The phone's headline stat; keep the same array while its values hold, as this is memoised. */
+  readonly headline: readonly HeadlineStat[]
 }
 
 /**
@@ -134,13 +159,28 @@ export interface TopBarControlsProps {
  * change when simulated time moves, or restart the run.
  */
 export const TopBarControls = memo(function TopBarControls(props: TopBarControlsProps) {
-  const { controls, demandRps, paused, speed, seed, onSeed, onDemandRelease } = props
+  const { controls, demandRps, paused, speed, seed, onSeed, onDemandRelease, phone, headline } =
+    props
+  const burstAndSeed = (
+    <>
+      <button
+        type="button"
+        className="btn"
+        title="5 times the Demand for 2 simulated seconds"
+        onClick={controls.burst}
+      >
+        Burst 5× for 2 s
+      </button>
+      <SeedField seed={seed} onChange={onSeed} />
+    </>
+  )
   return (
     <div className="island top-bar-controls" role="group" aria-label="Controls">
       <DemandSlider
         demandRps={demandRps}
         onChange={controls.setDemand}
         onRelease={onDemandRelease}
+        headline={phone ? headline : undefined}
       />
       <div className="button-group" role="group" aria-label="Playback">
         <button
@@ -184,15 +224,15 @@ export const TopBarControls = memo(function TopBarControls(props: TopBarControls
           </button>
         ))}
       </div>
-      <button
-        type="button"
-        className="btn"
-        title="5 times the Demand for 2 simulated seconds"
-        onClick={controls.burst}
-      >
-        Burst 5× for 2 s
-      </button>
-      <SeedField seed={seed} onChange={onSeed} />
+      {phone ? (
+        // Native, so it opens with a tap, Enter or Space and needs no script of its own.
+        <details className="more">
+          <summary className="btn">More</summary>
+          <div className="more-body">{burstAndSeed}</div>
+        </details>
+      ) : (
+        burstAndSeed
+      )}
     </div>
   )
 })

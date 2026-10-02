@@ -11,7 +11,8 @@ import { ShareButton } from './share/ShareButton.tsx'
 import { parseShareState, shareUrl } from './share/url-state.ts'
 import { ComparePanel } from './tabs/ComparePanel.tsx'
 import { TabBar } from './tabs/TabBar.tsx'
-import { shortNames, tabBadge } from './tabs/tabs.ts'
+import { headlineStats, shortNames, tabBadge } from './tabs/tabs.ts'
+import { panelStats } from './panel/stats.ts'
 import { PHONE_QUERY, useMediaQuery } from './use-media-query.ts'
 import { useRunner, type RunnerControls } from './use-runner.ts'
 import './app.css'
@@ -58,6 +59,25 @@ function ScenarioRun(props: {
   const [scenario, setScenario] = useState<Scenario>(initial)
   const names = useMemo(() => shortNames(scenario.variants), [scenario.variants])
   const { view, controls: runnerControls, slower } = useRunner(initial)
+  // Each Variant's p99 as the stat row computes it; the headline array stays the same object
+  // while the values hold, so the memoised controls re-render once a second, not every frame.
+  const p99Key = view.variants
+    .map((v, i) => {
+      const config = scenario.variants[i]
+      return config
+        ? panelStats(v.snapshots, config.limiter, scenario.traffic.clients.length).p99
+        : null
+    })
+    .join(',')
+  const headline = useMemo(
+    () =>
+      headlineStats(
+        openTab,
+        names,
+        p99Key.split(',').map((s) => (s === '' ? null : Number(s))),
+      ),
+    [openTab, names, p99Key],
+  )
   /**
    * The Demand the address bar holds: where the slider was last released, or where Reset put
    * it. Not the live value, which changes every frame of a drag.
@@ -136,6 +156,8 @@ function ScenarioRun(props: {
           seed={scenario.seed}
           onSeed={onSeed}
           onDemandRelease={setLinkDemand}
+          phone={phone}
+          headline={headline}
         />
         <ShareButton url={link} />
       </header>
