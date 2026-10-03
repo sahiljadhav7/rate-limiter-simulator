@@ -30,3 +30,6 @@ dist-ssr
 
 # Session handoffs for the next agent, local only
 handoffs/
+
+# Archify diagram output (generated)
+.archify/
